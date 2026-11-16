@@ -1,0 +1,768 @@
+"""GitHub mode: GitHub's free computers run the agent, the app page is the remote control.
+
+  The app (docs/index.html, served by GitHub Pages) uploads a clip in small parts to a branch named
+  inbox/<id>, drops command files in the records branch, and starts the workflow.
+  The workflow (.github/workflows/agent.yml) runs `python -m reelagent cloud` every 15 minutes and on demand:
+
+    1. load the agent's records (branch `agent-data`: settings, queue, database, covers, reports)
+    2. apply commands from the app (settings, post now, skip, caption edits)
+    3. refresh trend research if it is due
+    4. put uploaded clips back together, edit them into reels, keep the full-quality reels as release
+       files (tag `reels`) and a small preview next to the cover
+    5. post a queued reel if a posting time has come (it catches up after a late start), then answer
+       comments, read Instagram's top posts, learn from the stats
+    6. write status.json for the app, send alerts, save the records back
+
+The records branch is public, like everything in a free public repository, so every line written there
+goes through safety.scrub() and the files are checked for keys once more before they are saved.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+import traceback
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import requests
+
+from . import safety
+from .config import HOME, ROOT
+
+DATA_BRANCH = "agent-data"
+REELS_TAG = "reels"
+INBOX_PREFIX = "inbox/"
+ALERT_ISSUE = "Reel agent alerts"
+API = "https://api.github.com"
+EARLY = timedelta(minutes=7)        # a run this close before a posting time posts now rather than 15 min late
+VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".ts", ".flv"}
+SETTINGS_KEYS = {"handle", "timezone", "schedule", "autopilot", "clips", "voiceover", "instagram", "engagement",
+                 "trends", "review", "music", "phone", "ig_username"}
+
+GITIGNORE = """# the agent's records. Never keys, never full-size videos.
+.env
+inbox/
+music/
+output/clips/*/reel.mp4
+output/clips/*/voiceover.wav
+output/clips/*/voiceover.raw.wav
+output/state/voices/
+output/state/*.db-wal
+output/state/*.db-shm
+"""
+
+
+# ── git + GitHub plumbing ───────────────────────────────────────────────────
+
+def repo() -> str:
+    return os.getenv("GITHUB_REPOSITORY", "")
+
+
+def token() -> str:
+    return os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN") or ""
+
+
+def remote_url() -> str:
+    return os.getenv("REELAGENT_REMOTE") or f"https://github.com/{repo()}.git"
+
+
+def git(args: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
+    cmd = ["git"]
+    if token() and not os.getenv("REELAGENT_REMOTE"):
+        basic = base64.b64encode(f"x-access-token:{token()}".encode()).decode()
+        cmd += ["-c", f"http.https://github.com/.extraheader=AUTHORIZATION: basic {basic}"]
+    p = subprocess.run(cmd + args, cwd=str(cwd), capture_output=True, text=True)
+    if check and p.returncode != 0:
+        raise RuntimeError(safety.scrub(f"git {' '.join(args[:3])} failed: {p.stderr.strip()[-400:]}"))
+    return p
+
+
+class GitHub:
+    """The few REST calls the agent needs. A fake stands in for it in tests (REELAGENT_FAKE_GH=folder)."""
+
+    def __init__(self):
+        self.repo, self.token = repo(), token()
+
+    def _h(self, accept="application/vnd.github+json") -> dict:
+        return {"Authorization": f"Bearer {self.token}", "Accept": accept,
+                "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "reel-agent"}
+
+    def _req(self, method: str, url: str, **kw) -> requests.Response:
+        kw.setdefault("timeout", 60)
+        kw.setdefault("headers", self._h())
+        return requests.request(method, url if url.startswith("http") else f"{API}/repos/{self.repo}{url}", **kw)
+
+    def release(self) -> dict:
+        r = self._req("GET", f"/releases/tags/{REELS_TAG}")
+        if r.status_code == 404:
+            r = self._req("POST", "/releases", json={
+                "tag_name": REELS_TAG, "name": "Reels waiting to be posted", "prerelease": True,
+                "body": "Full-quality reels the agent has edited and not posted yet. The agent manages these files."})
+        if r.status_code not in (200, 201):
+            raise RuntimeError(f"GitHub releases: HTTP {r.status_code} {r.text[:160]}")
+        return r.json()
+
+    def assets(self) -> dict[str, dict]:
+        rel = self.release()
+        out, page = {}, 1
+        while True:
+            r = self._req("GET", f"/releases/{rel['id']}/assets", params={"per_page": 100, "page": page})
+            items = r.json() if r.status_code == 200 else []
+            out.update({a["name"]: a for a in items})
+            if len(items) < 100:
+                return out
+            page += 1
+
+    def upload(self, path: Path, name: str) -> None:
+        rel = self.release()
+        old = self.assets().get(name)
+        if old:
+            self._req("DELETE", f"/releases/assets/{old['id']}")
+        with open(path, "rb") as fh:
+            r = requests.post(f"https://uploads.github.com/repos/{self.repo}/releases/{rel['id']}/assets",
+                              params={"name": name}, data=fh, timeout=1800,
+                              headers={**self._h(), "Content-Type": "video/mp4"})
+        if r.status_code not in (200, 201):
+            raise RuntimeError(f"GitHub upload: HTTP {r.status_code} {r.text[:160]}")
+
+    def download(self, name: str, dest: Path) -> bool:
+        a = self.assets().get(name)
+        if not a:
+            return False
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with self._req("GET", f"/releases/assets/{a['id']}", headers=self._h("application/octet-stream"),
+                       stream=True, timeout=1800) as r:
+            if r.status_code != 200:
+                return False
+            with open(dest, "wb") as fh:
+                for chunk in r.iter_content(1 << 20):
+                    fh.write(chunk)
+        return dest.stat().st_size > 0
+
+    def delete(self, name: str) -> None:
+        a = self.assets().get(name)
+        if a:
+            self._req("DELETE", f"/releases/assets/{a['id']}")
+
+    def alert(self, title: str, body: str) -> bool:
+        """Post the alert as a comment on one issue assigned to the owner, so GitHub notifies them."""
+        owner = os.getenv("GITHUB_REPOSITORY_OWNER") or self.repo.split("/")[0]
+        r = self._req("GET", "/issues", params={"state": "open", "per_page": 100})
+        num = None
+        if r.status_code == 200:
+            num = next((i["number"] for i in r.json() if i.get("title") == ALERT_ISSUE and "pull_request" not in i), None)
+        if not num:
+            intro = ("The reel agent posts here whenever it makes reels, posts one, runs out of clips or hits a "
+                     "problem. GitHub sends these to you in its app and by email.")
+            r = self._req("POST", "/issues", json={"title": ALERT_ISSUE, "body": intro, "assignees": [owner]})
+            if r.status_code not in (200, 201):
+                return False
+            num = r.json()["number"]
+        r = self._req("POST", f"/issues/{num}/comments", json={"body": f"**{title}**\n\n{body}"})
+        return r.status_code in (200, 201)
+
+
+class FakeGitHub(GitHub):
+    """Stores 'release files' in a folder and alerts in a text file. For tests."""
+
+    def __init__(self, folder: str):
+        self.dir = Path(folder)
+        (self.dir / "assets").mkdir(parents=True, exist_ok=True)
+
+    def assets(self):
+        return {p.name: {"id": p.name, "name": p.name} for p in (self.dir / "assets").iterdir()}
+
+    def upload(self, path, name):
+        shutil.copy(path, self.dir / "assets" / name)
+
+    def download(self, name, dest):
+        src = self.dir / "assets" / name
+        if not src.exists():
+            return False
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(src, dest)
+        return True
+
+    def delete(self, name):
+        (self.dir / "assets" / name).unlink(missing_ok=True)
+
+    def alert(self, title, body):
+        with open(self.dir / "alerts.txt", "a", encoding="utf-8") as f:
+            f.write(f"## {title}\n{body}\n\n")
+        return True
+
+
+def github() -> GitHub:
+    fake = os.getenv("REELAGENT_FAKE_GH")
+    return FakeGitHub(fake) if fake else GitHub()
+
+
+# ── the records branch ──────────────────────────────────────────────────────
+
+def pull_data(home: Path = HOME) -> None:
+    """Check out the agent's records into `home` (must happen before the settings are read)."""
+    if (home / ".git").exists():
+        return
+    url = remote_url()
+    exists = bool(git(["ls-remote", "--heads", url, DATA_BRANCH], cwd=ROOT).stdout.strip())
+    if exists:
+        git(["clone", "--quiet", "--depth", "1", "--single-branch", "--branch", DATA_BRANCH, url, str(home)], cwd=ROOT)
+    else:
+        git(["init", "--quiet", "-b", DATA_BRANCH], cwd=home)
+        git(["remote", "add", "origin", url], cwd=home)
+    git(["config", "user.name", "reel-agent"], cwd=home)
+    git(["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], cwd=home)
+    (home / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
+
+
+def push_data(home: Path, message: str, squash: bool = False) -> bool:
+    """Save the records. The app may have added command files meanwhile: those are kept (rebase, retry)."""
+    bad = safety.leaks(home)
+    if bad:      # a key reached a file despite the scrubbing: refuse to publish those files
+        for rel in bad:
+            f = home / rel
+            if f.suffix in (".json", ".md", ".txt", ".log", ".yaml"):
+                f.write_text(safety.scrub(f.read_text("utf-8", "replace")), encoding="utf-8")
+        still = safety.leaks(home)
+        if still:
+            raise RuntimeError(f"refusing to save: a key was found in {', '.join(still[:3])}")
+    git(["add", "-A"], cwd=home)
+    if git(["diff", "--cached", "--quiet"], cwd=home, check=False).returncode == 0:
+        return False
+    git(["commit", "--quiet", "-m", message], cwd=home)
+    for attempt in range(5):
+        if git(["push", "--quiet", "origin", f"HEAD:{DATA_BRANCH}"], cwd=home, check=False).returncode == 0:
+            break
+        git(["fetch", "--quiet", "--depth", "30", "origin", DATA_BRANCH], cwd=home, check=False)
+        if git(["rebase", "FETCH_HEAD"], cwd=home, check=False).returncode != 0:
+            git(["rebase", "--abort"], cwd=home, check=False)
+            git(["merge", "--quiet", "-X", "ours", "--no-edit", "--allow-unrelated-histories", "FETCH_HEAD"],
+                cwd=home, check=False)
+        time.sleep(2 + attempt)
+    else:
+        raise RuntimeError("could not save the agent's records to GitHub after 5 tries")
+    if squash:   # once a day: keep the branch one commit deep so the repository stays small
+        head = git(["rev-parse", "HEAD"], cwd=home).stdout.strip()
+        new = git(["commit-tree", "HEAD^{tree}", "-m", "The agent's records (history trimmed daily)"], cwd=home).stdout.strip()
+        if git(["push", "--quiet", f"--force-with-lease={DATA_BRANCH}:{head}", "origin", f"{new}:refs/heads/{DATA_BRANCH}"],
+               cwd=home, check=False).returncode == 0:
+            git(["reset", "--quiet", "--soft", new], cwd=home, check=False)
+    return True
+
+
+# ── tools on the runner ─────────────────────────────────────────────────────
+
+def ensure_ffmpeg(log) -> bool:
+    from . import media
+    if media.tool_ok("ffmpeg"):
+        return True
+    if not os.getenv("GITHUB_ACTIONS"):
+        return False
+    log("installing ffmpeg on GitHub's computer (about half a minute)")
+    subprocess.run("sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null", shell=True)
+    media.tool_ok.cache_clear()
+    media.has_filter.cache_clear()
+    return media.tool_ok("ffmpeg")
+
+
+def ensure_ai() -> None:
+    """The Claude library is only needed when a Claude key is set (free Gemini needs nothing extra)."""
+    if os.getenv("ANTHROPIC_API_KEY") and os.getenv("GITHUB_ACTIONS"):
+        try:
+            import anthropic  # noqa: F401
+        except Exception:
+            subprocess.run([sys.executable, "-m", "pip", "install", "-q", "anthropic"], capture_output=True)
+
+
+def ensure_extras(cfg, log) -> None:
+    """Optional helpers for editing runs: the free offline voice. Never fatal."""
+    if not os.getenv("GITHUB_ACTIONS"):
+        return
+    v = cfg.get("voiceover") or {}
+    if v.get("mode", "auto") != "off" and v.get("engine", "piper") == "piper" and cfg.ai_available \
+            and not (cfg.ig_user_id and cfg.ig_token):
+        try:
+            import piper  # noqa: F401
+        except Exception:
+            subprocess.run([sys.executable, "-m", "pip", "install", "-q", "piper-tts"], capture_output=True)
+
+
+# ── commands from the app ───────────────────────────────────────────────────
+
+def _merge(base: dict, new: dict) -> dict:
+    out = dict(base)
+    for k, v in (new or {}).items():
+        out[k] = _merge(out.get(k) or {}, v) if isinstance(v, dict) and isinstance(out.get(k, {}), dict) else v
+    return out
+
+
+def apply_commands(cfg, db, log) -> dict:
+    """Run the command files the app left in commands/. Returns {'post_now': [ids], 'changed': bool}."""
+    from .db import copy_of
+    folder = HOME / "commands"
+    result = {"post_now": [], "changed": False}
+    if not folder.is_dir():
+        return result
+    for f in sorted(folder.glob("*.json")):
+        try:
+            cmd = json.loads(f.read_text(encoding="utf-8"))
+            kind, cid = cmd.get("type"), str(cmd.get("id") or "")
+            row = db.get(cid) if cid else None
+            if kind == "settings":
+                data = {k: v for k, v in (cmd.get("data") or {}).items() if k in SETTINGS_KEYS}
+                cfg.save_user_config(_merge(cfg.user_config(), data))
+                result["changed"] = True
+                log("⚙️ settings updated from the app: " + ", ".join(sorted(data)))
+            elif kind == "post_now" and row and row["status"] in ("queued", "ready", "failed"):
+                db.update(cid, status="queued", attempts=0, error=None)
+                result["post_now"].append(cid)
+            elif kind == "skip" and row and row["status"] != "posted":
+                db.update(cid, status="rejected")
+                log(f"⏭ {cid} skipped from the app")
+            elif kind == "retry" and row and row["status"] == "failed":
+                db.update(cid, status="queued", attempts=0, error=None)
+            elif kind == "caption" and row and row["status"] != "posted":
+                copy = copy_of(row)
+                if isinstance(cmd.get("caption"), str):
+                    copy["instagram_caption"] = cmd["caption"].strip()[:2000]
+                if isinstance(cmd.get("hashtags"), list):
+                    from .captions import _clean_hashtags
+                    copy["hashtags"] = _clean_hashtags(cmd["hashtags"], [])
+                db.update(cid, copy_json=copy)
+                log(f"✏️ caption of {cid} edited in the app")
+            elif kind in ("post_now", "skip", "retry", "caption"):
+                log(f"({kind} from the app ignored: reel {cid or '?'} is not in a state where that applies)")
+            elif kind not in ("wake", None):
+                log(f"(ignored a command the agent doesn't know: {kind})")
+        except Exception as e:
+            log(f"! could not apply {f.name}: {e}")
+        f.unlink(missing_ok=True)
+    return result
+
+
+# ── clips uploaded from the app ─────────────────────────────────────────────
+
+def inbox_refs() -> list[str]:
+    out = git(["ls-remote", "--heads", remote_url(), f"{INBOX_PREFIX}*"], cwd=ROOT, check=False).stdout
+    return sorted(l.split("refs/heads/", 1)[1].strip() for l in out.splitlines() if "refs/heads/" in l)
+
+
+def fetch_upload(ref: str, work: Path) -> tuple[Path, dict]:
+    """Download one uploaded clip (a branch of 5 MB parts) and put it back together."""
+    local = f"refs/reelagent/{ref}"
+    git(["fetch", "--quiet", "--depth", "1", remote_url(), f"+refs/heads/{ref}:{local}"], cwd=ROOT)
+    parts_dir = work / "parts" / ref.replace("/", "_")
+    parts_dir.mkdir(parents=True, exist_ok=True)
+    tar = parts_dir / "upload.tar"
+    git(["archive", "--format=tar", "-o", str(tar), local], cwd=ROOT)
+    with tarfile.open(tar) as t:
+        members = [m for m in t.getmembers() if m.isfile() and re.fullmatch(r"(meta\.json|part-\d{5})", m.name)]
+        try:
+            t.extractall(parts_dir, members=members, filter="data")
+        except TypeError:                      # Python before 3.12
+            t.extractall(parts_dir, members=members)
+    tar.unlink()
+    git(["update-ref", "-d", local], cwd=ROOT, check=False)
+    meta = json.loads((parts_dir / "meta.json").read_text(encoding="utf-8"))
+    name = re.sub(r"[^\w.-]+", "_", Path(str(meta.get("name") or "clip.mp4")).name).strip("._") or "clip.mp4"
+    if Path(name).suffix.lower() not in VIDEO_EXT:
+        name += ".mp4"
+    game = str(meta.get("game") or "auto").lower()
+    dest = work / "inbox" / (game if game not in ("auto", "") else "") / f"{ref.split('/')[-1]}_{name}"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    parts = sorted(parts_dir.glob("part-*"))
+    with open(dest, "wb") as out:
+        for p in parts:
+            with open(p, "rb") as fh:
+                shutil.copyfileobj(fh, out, 1 << 20)
+    shutil.rmtree(parts_dir, ignore_errors=True)
+    if meta.get("size") and dest.stat().st_size != int(meta["size"]):
+        raise ValueError(f"the upload is incomplete ({dest.stat().st_size} of {meta['size']} bytes): add the clip again")
+    return dest, meta
+
+
+def process_inbox(cfg, db, gh: GitHub, log, events: list) -> None:
+    from . import media, pipeline
+    refs = inbox_refs()
+    hist_file = cfg.state_dir / "uploads.json"
+    try:
+        hist = json.loads(hist_file.read_text(encoding="utf-8"))
+    except Exception:
+        hist = {}
+    if not refs:
+        return
+    if not ensure_ffmpeg(log):
+        log("! ffmpeg is not available here, so the clips can't be edited yet")
+        return
+    ensure_extras(cfg, log)
+    work = Path(tempfile.mkdtemp(prefix="reelagent-"))
+    cfg.inbox = work / "inbox"
+    cfg.inbox.mkdir(parents=True, exist_ok=True)
+    for ref in refs:
+        h = hist.setdefault(ref, {"name": ref, "attempts": 0})
+        h["attempts"] += 1
+        h["at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        made, note, done = [], "", True
+        try:
+            path, meta = fetch_upload(ref, work)
+            h["name"] = str(meta.get("name") or ref)[:80]
+            game = str(meta.get("game") or "auto").lower()
+            made = pipeline.process_file(cfg, db, path, game if game in cfg["games"] and game != "default" else None)
+            src = db.conn.execute("SELECT * FROM sources WHERE path=?", (str(path.resolve()),)).fetchone()
+            if src and src["status"] == "skipped":
+                note = src["note"] or "skipped"
+            for cid in made:
+                folder = cfg.output / "clips" / cid
+                reel = folder / "reel.mp4"
+                try:   # a small preview for the app; the full-quality reel goes to the release files
+                    media.run(["ffmpeg", "-y", "-v", "error", "-i", str(reel), "-vf", "scale=540:-2", "-r", "30",
+                               *media.encode_args(31, "veryfast"), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
+                               "-movflags", "+faststart", str(folder / "preview.mp4")])
+                except Exception as e:
+                    log(f"  (no preview for {cid}: {str(e)[:120]})")
+                for i in range(3):
+                    try:
+                        gh.upload(reel, f"{cid}.mp4")
+                        break
+                    except Exception as e:
+                        if i == 2:
+                            db.update(cid, status="failed", error=f"could not store the reel: {e}")
+                            log(f"! {cid}: could not store the reel ({e})")
+                        time.sleep(5)
+            path.unlink(missing_ok=True)
+            if made:
+                from .db import copy_of
+                hooks = [copy_of(db.get(c)).get("hook_text", "") for c in made]
+                events.append((f"🎬 {len(made)} reel{'s' if len(made) != 1 else ''} made from {h['name']}",
+                               "\n".join(f"- {c}: \"{x}\"" for c, x in zip(made, hooks))))
+            h.update(status="done" if made else "nothing", reels=made,
+                     note=note or ("" if made else "no moment was strong enough to post"))
+        except Exception as e:
+            note = safety.scrub(str(e))[:300]
+            log(f"❌ could not edit {h.get('name', ref)}: {note}")
+            done = h["attempts"] >= 2 or isinstance(e, ValueError)
+            h.update(status="failed" if done else "retrying", note=note)
+            if done:
+                events.append((f"❌ Could not edit {h.get('name', ref)}", note))
+        if done:
+            git(["push", "--quiet", remote_url(), "--delete", f"refs/heads/{ref}"], cwd=ROOT, check=False)
+    keep = sorted(hist.items(), key=lambda kv: kv[1].get("at", ""))[-30:]
+    hist_file.write_text(json.dumps(dict(keep), indent=1, ensure_ascii=False), encoding="utf-8")
+    shutil.rmtree(work, ignore_errors=True)
+
+
+# ── posting ─────────────────────────────────────────────────────────────────
+
+def due(cfg, db, now: datetime | None = None) -> bool:
+    """A posting time has come (or passed today without its reel). Posts up to 7 minutes early so a
+    run every 15 minutes lands close to the time instead of always after it."""
+    from . import phone, reach
+    n = phone._now(cfg, now)
+    if not (phone.in_active_hours(cfg, n) and phone.under_daily_max(cfg, db, n) and phone.gap_ok(cfg, db, n)):
+        return False
+    reached = [s for s in reach.post_times(cfg) if phone._t(s) <= (n + EARLY).time() or (n + EARLY).date() > n.date()]
+    return len(reached) > len(phone._posted_today(cfg, db, n))
+
+
+def schedule(cfg, db, count: int) -> list[str]:
+    """When the next `count` queued reels are expected to go out (local ISO times)."""
+    from . import phone, reach
+    now = phone._now(cfg)
+    slots, day = [], now.date()
+    posted_today = len(phone._posted_today(cfg, db, now))
+    times = sorted(reach.post_times(cfg), key=phone._t)[: int(cfg["schedule"]["max_per_day"])] or ["18:00"]
+    d = 0
+    while len(slots) < count and d < 30:
+        todays = [datetime.combine(day + timedelta(days=d), phone._t(s), tzinfo=now.tzinfo) for s in times]
+        if d == 0:
+            todays = todays[posted_today:]              # today's first slots already have their reels
+            todays = [max(t, now) for t in todays]
+        slots += todays
+        d += 1
+    return [t.isoformat(timespec="minutes") for t in slots[:count]]
+
+
+def ensure_reel(cfg, db, gh: GitHub, row) -> bool:
+    path = cfg.output / "clips" / row["id"] / "reel.mp4"
+    if not path.exists() and not gh.download(f"{row['id']}.mp4", path):
+        return False
+    if row["file"] != str(path):
+        db.update(row["id"], file=str(path))
+    return True
+
+
+def post_one(cfg, db, gh: GitHub, row, log, events: list) -> bool:
+    from . import autopilot
+    from .db import copy_of
+    if not ensure_reel(cfg, db, gh, row):
+        db.update(row["id"], status="failed", error="the edited reel file is missing; add the clip again")
+        return False
+    ok = autopilot.post(cfg, db, db.get(row["id"]))
+    row = db.get(row["id"])
+    if ok:
+        events.append((f"✅ Posted: \"{copy_of(row).get('hook_text', '')}\"", row["ig_url"] or ""))
+    elif row["status"] == "failed":
+        events.append((f"❌ Could not post {row['id']}", safety.scrub(row["error"] or "")))
+    return ok
+
+
+def tidy(cfg, db, gh: GitHub) -> None:
+    """Drop stored videos of reels that are posted, skipped or failed for good; keep covers of the last 60."""
+    try:
+        assets = gh.assets()
+    except Exception:
+        assets = {}
+    rows = db.clips()
+    alive = {r["id"] for r in rows if r["status"] in ("queued", "ready")}
+    for name in assets:
+        if name.endswith(".mp4") and name[:-4] not in alive:
+            failed = next((r for r in rows if r["id"] == name[:-4] and r["status"] == "failed"), None)
+            if failed and (failed["attempts"] or 0) < 3:
+                continue                       # may still be retried from the app
+            gh.delete(name)
+    done = [r for r in rows if r["status"] in ("posted", "rejected", "skipped")]
+    for r in done:
+        (cfg.output / "clips" / r["id"] / "preview.mp4").unlink(missing_ok=True)
+    for r in done[:-60]:
+        shutil.rmtree(cfg.output / "clips" / r["id"], ignore_errors=True)
+
+
+# ── what the app shows ──────────────────────────────────────────────────────
+
+def _clip(cfg, row, insights: dict, eta: str | None = None) -> dict:
+    from .db import copy_of, render_of
+    from .formats import FORMATS
+    c, r = copy_of(row), render_of(row)
+    base = f"output/clips/{row['id']}"
+    folder = cfg.output / "clips" / row["id"]
+    game = cfg.game_profile(row["game"])
+    d = {"id": row["id"], "game": row["game"], "game_name": game.get("name", row["game"]), "status": row["status"],
+         "hook": c.get("hook_text", ""), "caption": c.get("instagram_caption", ""), "hashtags": c.get("hashtags", []),
+         "quality": row["quality"], "hook_score": c.get("hook_score"),
+         "style": r.get("style", "classic"), "style_name": FORMATS.get(r.get("style", "classic"), {}).get("name", ""),
+         "style_why": c.get("style_why", ""), "look": (r.get("fx") or {}).get("look"),
+         "seconds": r.get("duration"), "created": row["created_at"],
+         "cover": f"{base}/cover.jpg" if (folder / "cover.jpg").exists() else None,
+         "preview": f"{base}/preview.mp4" if (folder / "preview.mp4").exists() else None,
+         "sound": (c.get("ig_audio") or {}).get("title") or ("your music" if r.get("music") else
+                                                             "voiceover" if r.get("voice") else None),
+         "what": c.get("what_happens", "")}
+    if eta:
+        d["eta"] = eta
+    if row["status"] == "posted":
+        d.update(posted_at=row["posted_at"], url=row["ig_url"], trial=bool(c.get("trial")))
+        i = insights.get(row["id"])
+        if i:
+            d["stats"] = {k: i[k] for k in ("views", "reach", "likes", "comments", "shares", "saved") if i[k] is not None}
+    if row["error"]:
+        d["error"] = row["error"]
+    return d
+
+
+def build_status(cfg, db, account: dict | None, note: str = "") -> dict:
+    from . import ai, autopilot, phone, reach, scout, trends
+    from .formats import FORMATS, allowed
+    insights = {r["clip_id"]: r for r in db.conn.execute("SELECT * FROM insights").fetchall()}
+    rows = db.clips()
+    queue = autopilot.queue_order(cfg, db)
+    etas = schedule(cfg, db, len(queue))
+    posted = [r for r in rows if r["status"] == "posted"][-40:][::-1]
+    problems = [r for r in rows if r["status"] == "failed"][-10:][::-1]
+    try:
+        uploads = list(json.loads((cfg.state_dir / "uploads.json").read_text(encoding="utf-8")).values())[-8:][::-1]
+    except Exception:
+        uploads = []
+    try:
+        log_tail = (cfg.state_dir / "agent.log").read_text(encoding="utf-8").splitlines()[-120:]
+    except Exception:
+        log_tail = []
+    brief, sc = trends.load(cfg), scout.load(cfg)
+    learned = {}
+    try:
+        learned = json.loads((cfg.state_dir / "learnings.json").read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    times = reach.post_times(cfg)
+    try:
+        smart = json.loads((cfg.state_dir / "smart_times.json").read_text(encoding="utf-8")).get("times")
+    except Exception:
+        smart = None
+    if not cfg["schedule"].get("auto_times", True):
+        source = "the times you set"
+    elif smart and times == smart:
+        source = "when your followers are online"
+    elif times and times == scout.post_times(cfg):
+        source = "when top posts in your niche go live"
+    else:
+        source = "the starting times (the agent tunes these as it learns)"
+    user = cfg.user_config()
+    sv = [i for i in insights.values()]
+    status = {
+        "v": 1,
+        "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "note": note,
+        "agent": {
+            "paused": autopilot.paused(cfg), "connected": bool(cfg.ig_user_id and cfg.ig_token),
+            "username": (account or {}).get("username") or user.get("ig_username") or "",
+            "followers": (account or {}).get("followers_count"),
+            "ai": ai.provider(cfg), "youtube": bool(os.getenv("YOUTUBE_API_KEY")),
+            "handle": cfg.get("handle", ""), "timezone": cfg.get("timezone"),
+            "version": (os.getenv("GITHUB_SHA") or "")[:7], "run": os.getenv("GITHUB_RUN_ID"),
+        },
+        "schedule": {"times": times, "source": source, "max_per_day": int(cfg["schedule"]["max_per_day"]),
+                     "posted_today": len(phone._posted_today(cfg, db)),
+                     "active_hours": (cfg.get("phone") or {}).get("active_hours"),
+                     "now_local": phone._now(cfg).isoformat(timespec="minutes")},
+        "settings": {
+            "handle": cfg.get("handle", ""), "timezone": cfg.get("timezone"),
+            "max_per_day": int(cfg["schedule"]["max_per_day"]), "auto_times": bool(cfg["schedule"].get("auto_times", True)),
+            "post_times": [str(t) for t in cfg["schedule"]["post_times"]],
+            "per_video": int(cfg["clips"]["per_video"]), "length": float(cfg["clips"]["length"]),
+            "style": cfg["clips"].get("style", "auto"), "styles": allowed(cfg),
+            "creativity": float(cfg["clips"].get("creativity", 0.2)), "end_cards": bool(cfg["clips"].get("end_cards", True)),
+            "look": (cfg["clips"].get("fx") or {}).get("look", "auto"),
+            "reply_to_comments": bool((cfg.get("engagement") or {}).get("reply_to_comments", True)),
+            "trending_audio": bool((cfg.get("instagram") or {}).get("trending_audio", True)),
+            "benchmark_pages": (cfg.get("trends") or {}).get("benchmark_pages") or [],
+            "games": {k: v.get("name", k) for k, v in cfg["games"].items() if k != "default"},
+            "all_styles": {k: v["name"] for k, v in FORMATS.items()},
+        },
+        "queue": [_clip(cfg, r, insights, etas[i] if i < len(etas) else None) for i, r in enumerate(queue)],
+        "posted": [_clip(cfg, r, insights) for r in posted],
+        "problems": [_clip(cfg, r, insights) for r in problems],
+        "uploads": uploads,
+        "totals": {"posted": sum(1 for r in rows if r["status"] == "posted"),
+                   "views": sum((i["views"] or 0) for i in sv), "likes": sum((i["likes"] or 0) for i in sv),
+                   "shares": sum((i["shares"] or 0) for i in sv)},
+        "learned": {
+            "trends": {"date": brief.get("date"), "summary": brief.get("summary", ""),
+                       "reel_types": (brief.get("reel_types") or {}).get("recommended") or [],
+                       "new_ideas": (brief.get("reel_types") or {}).get("new_ideas") or [],
+                       "algorithm": brief.get("algorithm_updates") or []} if brief else None,
+            "instagram": {"updated": sc.get("updated"), "notes": sc.get("notes") or [],
+                          "games": {g: {"posts": d.get("posts"), "tags": [h["tag"] for h in d.get("hashtags", [])[:8]],
+                                        "kinds": d.get("formats", [])[:6], "playbook": d.get("playbook"),
+                                        "openers": [c["line"] for c in d.get("top_captions", [])[:3]]}
+                                    for g, d in (sc.get("games") or {}).items()}} if sc else None,
+            "page": {"reels": learned.get("n"), "confidence": learned.get("confidence"),
+                     "by_kind": learned.get("style_weights") or {}} if learned else None,
+        },
+        "log": log_tail,
+    }
+    return safety.scrub_obj(status)
+
+
+# ── one run ─────────────────────────────────────────────────────────────────
+
+def run(cfg_path=None) -> int:
+    """Everything one visit does. Always tries to save the records, even after an error."""
+    from . import autopilot, instagram, pipeline
+    from .config import Config, load_env
+    from .db import DB
+    pull_data(HOME)
+    load_env()
+    ensure_ai()
+    cfg = Config(cfg_path)
+    db = DB(cfg.state_dir / "agent.db")
+    gh = github()
+    events: list[tuple[str, str]] = []
+    note, code = "", 0
+
+    def log(msg: str) -> None:
+        pipeline.log(msg, cfg)
+
+    try:
+        cmds = apply_commands(cfg, db, log)
+        if cmds["changed"]:
+            cfg = Config(cfg_path)
+        connected = bool(cfg.ig_user_id and cfg.ig_token)
+        if cfg.get("handle") in (None, "", "@yourpage"):       # no watermark chosen: use the Instagram name, or none
+            name = cfg.user_config().get("ig_username") or ""
+            try:
+                name = name or json.loads((cfg.state_dir / "account.json").read_text(encoding="utf-8")).get("username", "")
+            except Exception:
+                pass
+            cfg.data["handle"] = f"@{name.lstrip('@')}" if name else ""
+
+        autopilot.trends_job(cfg, db, pipeline.log)                 # fresh trends before any editing
+        process_inbox(cfg, db, gh, log, events)
+
+        if connected:
+            for cid in cmds["post_now"]:
+                row = db.get(cid)
+                if row and row["status"] == "queued":
+                    post_one(cfg, db, gh, row, log, events)
+            if not autopilot.paused(cfg) and due(cfg, db):
+                row = autopilot.pick_next(cfg, db)
+                if row:
+                    post_one(cfg, db, gh, row, log, events)
+                else:
+                    flag = cfg.state_dir / "empty_alert.txt"
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    if not flag.exists() or flag.read_text().strip() != today:
+                        flag.write_text(today)
+                        log("📭 a posting time has come but the queue is empty")
+                        events.append(("📭 Nothing to post", "A posting time has come and the queue is empty. "
+                                                            "Add gameplay in the app and the agent will cut new reels."))
+        elif cmds["post_now"]:
+            log("! can't post yet: Instagram isn't connected (Settings in the app)")
+
+        # the quieter jobs: comments, Instagram scout, stats, weekly times, monthly profile check
+        if connected and autopilot._every(db, "scout", float((cfg.get("trends") or {}).get("scout_every_hours", 48)) * 60):
+            ensure_ffmpeg(log)                                       # the scout watches a few top reels
+        autopilot.tick(cfg, db, due=lambda *_: False, process_inbox=False)
+        tidy(cfg, db, gh)
+    except Exception:
+        code = 1
+        note = safety.scrub(traceback.format_exc()[-1200:])
+        log("! the run hit an error:\n" + note)
+        events.append(("❌ The agent hit an error", f"```\n{note[-700:]}\n```"))
+
+    account = None
+    try:
+        if cfg.ig_user_id and cfg.ig_token:
+            cache = cfg.state_dir / "account.json"
+            if cache.exists() and time.time() - cache.stat().st_mtime < 3600:
+                account = json.loads(cache.read_text(encoding="utf-8"))
+            else:
+                account = instagram.from_config(cfg).account()
+                cache.write_text(json.dumps(account), encoding="utf-8")
+    except Exception as e:
+        log(f"! could not read the Instagram account: {e}")
+    try:
+        status = build_status(cfg, db, account, note)
+        (HOME / "status.json").write_text(json.dumps(status, indent=1, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        code = 1
+        pipeline.log("! could not write status.json:\n" + safety.scrub(traceback.format_exc()[-800:]), cfg)
+    squash = autopilot._every(db, "squash", 24 * 60)
+    if squash:
+        db.job_done("squash")
+    try:
+        db.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except Exception:
+        pass
+    db.conn.close()
+    saved = push_data(HOME, f"agent run {datetime.now(timezone.utc):%Y-%m-%d %H:%M} UTC", squash=squash)
+    for title, body in events:
+        try:
+            gh.alert(safety.scrub(title), safety.scrub(body))
+        except Exception:
+            pass
+        topic = os.getenv("NTFY_TOPIC")
+        if topic:
+            try:
+                requests.post(f"https://ntfy.sh/{topic}", data=safety.scrub(body).encode(), timeout=20,
+                              headers={"Title": safety.scrub(title).encode("ascii", "ignore").decode(), "Tags": "clapper"})
+            except Exception:
+                pass
+    print(f"run finished: {'records saved' if saved else 'nothing changed'}, {len(events)} alert(s)")
+    return code

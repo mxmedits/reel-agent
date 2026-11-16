@@ -187,7 +187,7 @@ def run_audit(cfg, db: DB, log=print) -> dict:
               "WHAT THE DATA SAYS", *[f"{i}. {f}" for i, f in enumerate(findings, 1)], "",
               "BY GAME", *[f"  {k}: {v['mean_outlier']}x (n={v['n']})" for k, v in by_game.items()], "",
               "BY HOOK FORMULA", *[f"  {k}: {v['mean_outlier']}x (n={v['n']})" for k, v in by_formula.items()], "",
-              "BY EDIT STYLE", *[f"  {k}: {v['mean_outlier']}x (n={v['n']})" for k, v in by_style.items()], "",
+              "BY KIND OF REEL", *[f"  {k}: {v['mean_outlier']}x (n={v['n']})" for k, v in by_style.items()], "",
               "BY SOUND", *[f"  {k}: {v['mean_outlier']}x (n={v['n']})" for k, v in by_sound.items()], "",
               "TRIAL VS REGULAR", *[f"  {k}: {v['mean_outlier']}x (n={v['n']})" for k, v in by_trial.items()]]
     queued = db.clips("queued")
@@ -202,10 +202,11 @@ def run_audit(cfg, db: DB, log=print) -> dict:
         notes.append("- Formulas winning here: " + ", ".join(tf))
     ranked_styles = sorted(by_style.items(), key=lambda kv: -(kv[1]["mean_outlier"] or 0))
     if len(ranked_styles) > 1:
-        notes.append("- Edit styles on this page (views vs median): " +
+        notes.append("- Kinds of reel on this page (views vs median): " +
                      ", ".join(f"{k} {v['mean_outlier']}x (n={v['n']})" for k, v in ranked_styles))
     learn = {"updated": today, "n": len(rows), "confidence": confidence,
              "game_weights": {k: v["mean_outlier"] for k, v in by_game.items()},
+             "style_weights": {k: {"x": v["mean_outlier"], "n": v["n"]} for k, v in by_style.items()},
              "prompt_notes": "\n".join(notes) if len(rows) >= 5 else ""}
     (cfg.state_dir / "learnings.json").write_text(json.dumps(learn, indent=2), encoding="utf-8")
     log(f"📊 audit written: reports/audit-{today}.md")
@@ -216,7 +217,7 @@ def run_audit(cfg, db: DB, log=print) -> dict:
 
 def profile_check(cfg, ig, log=print) -> Path | None:
     if not cfg.ai_available:
-        log("profile check needs ANTHROPIC_API_KEY")
+        log("profile check waits for an AI key (free Gemini works)")
         return None
     prof = ig.profile()
     recent = [m.get("caption", "")[:120] for m in ig.recent_media(9)]

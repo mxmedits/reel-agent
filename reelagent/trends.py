@@ -26,7 +26,7 @@ import requests
 from . import ai
 from .captions import parse_json
 
-STYLES = ["classic", "slowmo", "meme_bar"]
+STYLES = ["classic", "slowmo", "replay", "freeze", "meme_bar", "pov", "top3", "montage"]
 
 ALGORITHM = """How Instagram ranks Reels (stated by Instagram's head, Adam Mosseri, 2025-2026):
 - Top signals: watch time (completion, replays), sends per reach (DM shares: the strongest signal for reaching
@@ -43,7 +43,10 @@ How to apply it to every reel:
 SCHEMA = """{
   "summary": "<2 sentences: what's working for gaming Reels right now>",
   "formats": [{"name": "...", "how": "<how to apply it to a gameplay clip>"}],
-  "edit_styles": {"recommended": "<one of: classic | slowmo | meme_bar>", "notes": "<when each works now>"},
+  "edit_styles": {"recommended": "<one of: classic | slowmo | replay | freeze | meme_bar | pov | top3 | montage>",
+                  "notes": "<when each works now>"},
+  "reel_types": {"recommended": ["<up to 4 of the same list, strongest first>"],
+                 "new_ideas": ["<kinds of reel that are trending but not in the list, one line each>"]},
   "music": {"genres": ["..."], "search_terms": ["<3-6 short terms to search Instagram's music library>"],
             "mood_bias": "<hype|intense|epic|chill|funny|suspense>"},
   "games": {"<game key>": {"angles": ["..."], "timely": ["<dated events/moments>"], "hashtags": ["#..."],
@@ -59,8 +62,11 @@ announcements (Adam Mosseri, @creators, about.instagram.com), creator-economy ne
 marketing sites. Always check for recent changes to how Instagram ranks or recommends Reels. Be concrete and current;
 say so when evidence is thin instead of guessing. Never recommend leaked/pre-release footage, story spoilers,
 engagement bait that breaks Instagram rules, or reposting other creators' clips.
-Edit styles the editor can do: classic (payoff-first teaser, punch zoom, big hook text),
-slowmo (slow-motion on the payoff), meme_bar (white caption bar on top with a relatable line, video below).
+Kinds of reel the editor can make: classic (payoff-first teaser, punch zoom, big hook text), slowmo (slow motion
+on the payoff), replay (full speed, then a slow-motion instant replay), freeze (freeze-frame with a label just
+before the payoff), meme_bar (white caption bar with a relatable line), pov (a "POV: ..." caption box),
+top3 (three moments counted down), montage (quick cuts of the best moments). Any of them can end on a question card.
+Say which of these fit what is trending now, and name trending kinds the editor cannot make yet under new_ideas.
 Finish with ONLY the JSON object, no prose after it."""
 
 
@@ -84,6 +90,7 @@ def youtube_evidence(cfg, log=print) -> str:
     if not key:
         return ""
     base = "https://www.googleapis.com/youtube/v3"
+    study: dict = {}
     week = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
     lines = []
     try:
@@ -96,14 +103,22 @@ def youtube_evidence(cfg, log=print) -> str:
             r.raise_for_status()
             items = r.json().get("items", [])
             ids = ",".join(i["id"]["videoId"] for i in items if i.get("id", {}).get("videoId"))
-            views = {}
+            views, secs = {}, {}
             if ids:
-                v = requests.get(f"{base}/videos", timeout=30, params={"part": "statistics", "id": ids, "key": key})
-                views = {x["id"]: int(x.get("statistics", {}).get("viewCount", 0)) for x in v.json().get("items", [])}
+                v = requests.get(f"{base}/videos", timeout=30,
+                                 params={"part": "statistics,contentDetails", "id": ids, "key": key})
+                for x in v.json().get("items", []):
+                    views[x["id"]] = int(x.get("statistics", {}).get("viewCount", 0))
+                    secs[x["id"]] = _iso_seconds((x.get("contentDetails") or {}).get("duration", ""))
             lines.append(f"\nTop {prof.get('name', g)} Shorts this week:")
+            titled = []
             for i in items:
                 vid = i.get("id", {}).get("videoId")
                 lines.append(f"  - {i['snippet']['title']} ({views.get(vid, 0):,} views)")
+                titled.append((i["snippet"]["title"], views.get(vid, 0), secs.get(vid, 0)))
+            study[g] = _study_titles(titled)
+            if study[g].get("formats"):
+                lines.append("  kinds of video: " + ", ".join(f"{k['tag']} {int(k['share'] * 100)}%" for k in study[g]["formats"][:5]))
         r = requests.get(f"{base}/videos", timeout=30, params={
             "part": "snippet", "chart": "mostPopular", "videoCategoryId": "20", "regionCode": "US",
             "maxResults": 15, "key": key})
@@ -112,7 +127,35 @@ def youtube_evidence(cfg, log=print) -> str:
             lines += [f"  - {i['snippet']['title']}" for i in r.json().get("items", [])]
     except Exception as e:
         log(f"  (YouTube trend data unavailable: {e})")
+    if study:
+        (cfg.state_dir / "youtube_study.json").write_text(json.dumps(
+            {"updated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "games": study}, indent=2), encoding="utf-8")
     return "\n".join(lines)[:6000]
+
+
+def _iso_seconds(d: str) -> float:
+    import re
+    m = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", d or "")
+    return (int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60 + int(m.group(3) or 0)) if m else 0.0
+
+
+def _study_titles(titled: list[tuple]) -> dict:
+    """Kinds of video among this week's top Shorts (from their titles) and how long they run."""
+    import math
+    import statistics
+
+    from . import scout
+    score, count, total = {}, {}, 0.0
+    for title, views, _ in titled:
+        w = math.log1p(views) + 0.5
+        total += w
+        for f in scout.classify(title):
+            score[f] = score.get(f, 0.0) + w
+            count[f] = count.get(f, 0) + 1
+    lens = [s for _, _, s in titled if 5 <= s <= 90]
+    return {"formats": [{"tag": f, "share": round(score[f] / max(total, 1e-9), 3), "on_posts": count[f]}
+                        for f in sorted(score, key=score.get, reverse=True)][:8],
+            "median_seconds": round(statistics.median(lens), 1) if len(lens) >= 4 else None, "videos": len(titled)}
 
 
 def instagram_sound_evidence(cfg) -> str:
@@ -156,6 +199,10 @@ def refresh(cfg, log=print) -> dict:
         return load(cfg)
     if brief.get("edit_styles", {}).get("recommended") not in STYLES:
         brief.setdefault("edit_styles", {})["recommended"] = "classic"
+    rt = brief.get("reel_types") if isinstance(brief.get("reel_types"), dict) else {}
+    rec = rt.get("recommended") if isinstance(rt.get("recommended"), list) else []
+    rt["recommended"] = [r for r in rec if r in STYLES][:4] or [brief["edit_styles"]["recommended"]]
+    brief["reel_types"] = rt
     brief["date"] = today
     brief["provider"] = ai.provider(cfg)
     brief_path(cfg).write_text(json.dumps(brief, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -169,6 +216,10 @@ def _write_report(cfg, b: dict) -> None:
     lines += [f"  - {f.get('name')}: {f.get('how')}" for f in b.get("formats", [])]
     es = b.get("edit_styles", {})
     lines += ["", f"EDIT STYLE: {es.get('recommended')}  ({es.get('notes', '')})"]
+    rt = b.get("reel_types") or {}
+    if rt.get("recommended"):
+        lines.append("REEL TYPES TO LEAN ON: " + ", ".join(rt["recommended"]))
+    lines += [f"  new idea (not built yet): {x}" for x in (rt.get("new_ideas") or [])[:5]]
     m = b.get("music", {})
     lines += ["", f"MUSIC: {', '.join(m.get('genres', []))} · searching: {', '.join(m.get('search_terms', []))}"]
     for g, d in (b.get("games") or {}).items():
@@ -210,6 +261,9 @@ def prompt_notes(cfg, game: str) -> str:
     es = b.get("edit_styles", {})
     if es.get("recommended"):
         parts.append(f"Edit style trending: {es['recommended']} ({es.get('notes', '')})")
+    rt = b.get("reel_types") or {}
+    if rt.get("recommended"):
+        parts.append("Reel types working now, strongest first: " + ", ".join(rt["recommended"]))
     if b.get("caption_tips"):
         parts.append("Caption tips: " + "; ".join(b["caption_tips"][:3]))
     if b.get("algorithm_updates"):

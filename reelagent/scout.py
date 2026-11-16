@@ -9,6 +9,11 @@ Every couple of days (all free, through your own Instagram connection):
        • trending hashtags   ranked by how often they appear on top posts, weighted by engagement
        • caption patterns    the opening lines of the best posts, typical length, questions, CTAs, emoji
        • best posting hours  when the top posts went live (in your time zone), engagement-weighted
+       • kinds of reel       POV, "wait for it", rate-this, top-N rankings, clutch replays, fails, edits...
+                             and how common each is among top posts
+  4. It then WATCHES a few of those top reels (when Instagram shares the video): how long they run, how
+     often they cut, whether they carry on-screen text, and what the AI sees in them. That becomes a small
+     playbook per game. The videos are only measured, never kept or reposted.
 Saved to output/state/scout.json and used by the caption writer (hashtags + caption style), the
 scheduler (posting times until Instagram shares your own followers' online hours at 100 followers)
 and the daily trend brief. If Meta hasn't enabled hashtag search for your app yet, it says so once and
@@ -34,6 +39,39 @@ SPAMMY = {
     "photooftheday", "trending", "trend", "trendingreels", "explorer", "fypage", "fypシ", "instareels",
     "comment4comment", "c4c", "followback", "shoutout", "s4s", "love", "tiktok", "youtube", "shorts", "youtubeshorts",
 }
+# kinds of reel, recognised from the caption / title (a post can be several at once)
+FORMAT_RULES = [
+    ("pov", r"\bpov\b"),
+    ("relatable", r"\bwhen (you|your|u|ur|the|ya)\b|\bme when\b|\bthat one (friend|teammate|guy)\b|\bwe all\b"),
+    ("wait_for_it", r"wait for it|watch (till|until|til|to) the end|wait (till|until|til) the end|did not expect"),
+    ("rate", r"\brate (this|it|my|the)\b|out of (10|ten)|/10\b|\bw or l\b"),
+    ("ranking", r"\btop ?\d+\b|\branking\b|\branked\b|tier list|best \d+\b"),
+    ("clutch", r"\bclutch|\b1v\d|\bace\b|no ?scope|last second|buzzer|\bsnipe"),
+    ("fail", r"\bfails?\b|gone wrong|went wrong|\bbug\b|\bglitch|\bunlucky\b|\brip\b"),
+    ("funny", r"[\U0001F602\U0001F923\U0001F480]|\bfunny\b|\blol\b|\blmao\b|\bbro\b"),
+    ("edit", r"\bedit\b|\bmontage\b|velocity|\bamv\b|4k edit|best bits|highlights"),
+    ("tips", r"\btips?\b|\bhow to\b|tutorial|\bguide\b|best (settings|loadout|class)|did you know|\bsecret\b|hidden|easter egg"),
+    ("comparison", r"\bvs\.?\b|versus|then vs now|before and after|expectation"),
+    ("series", r"\bpart ?\d+|\bep(isode)? ?\d+|\bday ?\d+"),
+    ("question", r"\?\s*$|would you\b|which (one|is)\b|who (wins|else|did)\b|thoughts\?|agree\?"),
+    ("news", r"trailer|\bleak|release date|\bupdate\b|\bpatch\b|season \d|launch|new map"),
+    ("challenge", r"challenge|\bimpossible\b|only using|without (dying|taking)|\bno hud\b"),
+    ("satisfying", r"satisfying|\bclean\b|\bsmooth\b|crispy|buttery"),
+]
+_FORMAT_RE = [(t, re.compile(rx, re.I | re.M)) for t, rx in FORMAT_RULES]
+FORMAT_NAMES = {"pov": "POV", "relatable": "relatable 'when you...'", "wait_for_it": "wait for it", "rate": "rate this",
+                "ranking": "top-N ranking", "clutch": "clutch / skill shot", "fail": "fail", "funny": "funny",
+                "edit": "edit / montage", "tips": "tips and secrets", "comparison": "comparison", "series": "series (part N)",
+                "question": "ends on a question", "news": "news and updates", "challenge": "challenge",
+                "satisfying": "satisfying"}
+
+
+def classify(text: str) -> list[str]:
+    """Kinds of reel a caption or title points to."""
+    body = TAG.sub("", text or "")
+    return [t for t, rx in _FORMAT_RE if rx.search(body)]
+
+
 CTA_WORDS = ("comment", "tag", "send", "share", "follow", "save", "rate", "drop", "tell me", "who", "would you")
 EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿]")
 TAG = re.compile(r"#(\w{2,40})", re.U)
@@ -88,6 +126,7 @@ def analyse(posts: list[dict], tz: ZoneInfo, exclude: set[str] = frozenset(),
     if not posts:
         return {}
     tag_score, tag_count = defaultdict(float), Counter()
+    fmt_score, fmt_count, total_w = defaultdict(float), Counter(), 0.0
     hours = [0.0] * 24
     lengths, questions, ctas, emojis, ntags = [], 0, 0, 0, []
     for p in posts:
@@ -100,6 +139,10 @@ def analyse(posts: list[dict], tz: ZoneInfo, exclude: set[str] = frozenset(),
                 continue
             tag_score[t] += w
             tag_count[t] += 1
+        total_w += w
+        for f in classify(cap):
+            fmt_score[f] += w
+            fmt_count[f] += 1
         body = TAG.sub("", cap).strip()
         if body:
             lengths.append(len(body))
@@ -129,6 +172,8 @@ def analyse(posts: list[dict], tz: ZoneInfo, exclude: set[str] = frozenset(),
         "hashtags": [{"tag": "#" + t, "on_posts": tag_count[t], "score": round(tag_score[t], 1)}
                      for t in ranked[:20] if tag_count[t] >= 2 or n < 12],
         "top_captions": lines,
+        "formats": [{"tag": f, "share": round(fmt_score[f] / max(total_w, 1e-9), 3), "on_posts": fmt_count[f]}
+                    for f in sorted(fmt_score, key=fmt_score.get, reverse=True) if fmt_count[f] >= 2 or n < 12][:8],
         "caption_stats": {
             "median_length": int(statistics.median(lengths)) if lengths else 0,
             "with_question": round(questions / max(len(lengths), 1), 2),
@@ -153,6 +198,102 @@ def best_hours(weights: list[float], want: int, earliest: int = 9, latest: int =
     return sorted(chosen)
 
 
+def _cuts(video: Path, workdir: Path) -> int:
+    """How many hard cuts a video has (scene changes), measured on a small 10 fps copy."""
+    from . import media
+    out = workdir / "cuts.txt"
+    out.unlink(missing_ok=True)
+    media.run(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-an", "-vf",
+               "fps=10,scale=160:-2,select='gt(scene,0.30)',metadata=print:file=cuts.txt", "-f", "null", "-"],
+              cwd=workdir)
+    return sum(1 for l in out.read_text("utf-8", "replace").splitlines() if l.startswith("frame:")) if out.exists() else 0
+
+
+STUDY_PROMPT = """These 4 stills are from one of the top-performing gaming Reels on Instagram this week \
+(start, a quarter in, past the middle, near the end). Its caption: "{caption}"
+It runs {seconds:.0f} seconds with about {cuts} cuts.
+Describe how it is MADE, so an editor can learn from it. Reply ONLY with JSON:
+{{"kind": "<one of: {kinds}, other>",
+ "on_screen_text": <true|false>,
+ "text_style": "<where the text sits and how it looks, or empty>",
+ "structure": "<one sentence: how it opens, builds and pays off>",
+ "effects": ["<zoom | slow motion | freeze frame | shake | split screen | meme caption | captions | none ...>"],
+ "why_it_works": "<one sentence>",
+ "idea": "<one sentence: how a gameplay clips page could use this>"}}"""
+
+
+def study(cfg, posts: list[dict], log=print) -> dict:
+    """Watch a few top reels: length, cut pace, on-screen text, what the AI sees. Returns a playbook dict."""
+    import tempfile
+
+    import requests
+
+    from . import media
+    tcfg = cfg.get("trends") or {}
+    limit = int(tcfg.get("study_per_game", 3))
+    vids = [p for p in sorted(posts, key=_engagement, reverse=True) if p.get("media_url")][:limit * 2]
+    if limit <= 0 or not vids or not media.tool_ok("ffmpeg"):
+        return {}
+    ai_left = int(tcfg.get("study_with_ai", 2)) if cfg.ai_available else 0
+    seen, secs, shots, texts, kinds, notes, ideas = 0, [], [], [], Counter(), [], []
+    with tempfile.TemporaryDirectory() as td:
+        wd = Path(td)
+        for n, p in enumerate(vids):
+            if seen >= limit:
+                break
+            f = wd / f"top{n}.mp4"
+            try:
+                with requests.get(p["media_url"], stream=True, timeout=60) as r:
+                    r.raise_for_status()
+                    size = 0
+                    with open(f, "wb") as fh:
+                        for chunk in r.iter_content(1 << 20):
+                            size += len(chunk)
+                            if size > 60 * 1024 * 1024:
+                                raise ValueError("too large")
+                            fh.write(chunk)
+                info = media.probe(f)
+                if not 3 <= info.duration <= 180:
+                    continue
+                cuts = _cuts(f, wd)
+            except Exception:
+                continue
+            finally:
+                pass
+            seen += 1
+            secs.append(info.duration)
+            shots.append(info.duration / (cuts + 1))
+            if ai_left > 0:
+                try:
+                    from . import captions
+                    times = [min(0.3, info.duration / 4), info.duration * 0.25, info.duration * 0.6, info.duration * 0.9]
+                    content = captions._frames(f, times, wd)
+                    content.append({"type": "text", "text": STUDY_PROMPT.format(
+                        caption=_first_line(p.get("caption") or "")[:120], seconds=info.duration, cuts=cuts,
+                        kinds=", ".join(t for t, _ in FORMAT_RULES))})
+                    d = captions.parse_json(captions.ask_claude(
+                        cfg, "You are a short-form video editor who studies what makes Reels work. Describe only "
+                             "what the stills show.", content, 500))
+                    ai_left -= 1
+                    texts.append(bool(d.get("on_screen_text")))
+                    if d.get("kind"):
+                        kinds[str(d["kind"]).lower()[:24]] += 1
+                    if d.get("why_it_works"):
+                        notes.append(str(d["why_it_works"])[:160])
+                    if d.get("idea"):
+                        ideas.append(str(d["idea"])[:160])
+                except Exception as e:
+                    log(f"  (could not describe a top reel: {str(e)[:80]})")
+            f.unlink(missing_ok=True)
+    if not seen:
+        return {}
+    med = statistics.median
+    return {"studied": seen, "median_seconds": round(med(secs), 1), "median_shot_seconds": round(med(shots), 2),
+            "cuts_per_10s": round(10 / max(med(shots), 0.1), 1),
+            "with_text": round(sum(texts) / len(texts), 2) if texts else None,
+            "kinds": dict(kinds.most_common(5)), "notes": notes[:4], "ideas": ideas[:4]}
+
+
 def refresh(cfg, ig, log=print) -> dict:
     """Pull top posts for each game's hashtags (+ benchmark pages), analyse and save. Returns the scout data."""
     tcfg = cfg.get("trends") or {}
@@ -161,7 +302,7 @@ def refresh(cfg, ig, log=print) -> dict:
     tz = ZoneInfo(cfg.get("timezone", "America/Toronto"))
     budget_cap = int(tcfg.get("hashtag_budget", 24))
     used = _budget(cfg)
-    fields = "id,caption,like_count,comments_count,media_type,permalink,timestamp"
+    fields = "id,caption,like_count,comments_count,media_type,media_url,permalink,timestamp"
     out = {"updated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "games": {}, "notes": []}
     all_posts: list[dict] = []
     hashtag_ok = True
@@ -219,10 +360,21 @@ def refresh(cfg, ig, log=print) -> dict:
         res = analyse(posts, tz, other_games=others) if posts else {}
         if res:
             res["searched"] = sorted(exclude)
+            if tcfg.get("study_reels", True):
+                try:
+                    book = study(cfg, posts, log)
+                    if book:
+                        res["playbook"] = book
+                except Exception as e:
+                    out["notes"].append(f"could not study {key} reels: {str(e)[:100]}")
             out["games"][key] = res
             all_posts += posts
+            kinds = ", ".join(f"{FORMAT_NAMES.get(k['tag'], k['tag'])} {int(k['share'] * 100)}%" for k in res.get("formats", [])[:4])
             log(f"🔎 {prof.get('name', key)}: read {res['posts']} top Instagram posts → "
-                f"tags {' '.join(h['tag'] for h in res['hashtags'][:5])}")
+                f"tags {' '.join(h['tag'] for h in res['hashtags'][:5])}"
+                + (f" | kinds of reel: {kinds}" if kinds else "")
+                + (f" | watched {res['playbook']['studied']}: ~{res['playbook']['median_seconds']:.0f}s, "
+                   f"a cut every {res['playbook']['median_shot_seconds']:.1f}s" if res.get("playbook") else ""))
 
     # benchmark pages you chose (Business Discovery)
     bench = [b.lstrip("@") for b in (tcfg.get("benchmark_pages") or []) if b]
@@ -268,6 +420,16 @@ def _report(cfg, d: dict) -> None:
                   f"~{cs.get('median_hashtags')} hashtags"]
         lines += [f"  · {c['line']}  ({c.get('likes') or '?'} likes, {c.get('comments') or 0} comments)"
                   for c in r.get("top_captions", [])[:5]]
+        if r.get("formats"):
+            lines.append("  kinds of reel among top posts: " + ", ".join(
+                f"{FORMAT_NAMES.get(k['tag'], k['tag'])} {int(k['share'] * 100)}%" for k in r["formats"]))
+        pb = r.get("playbook") or {}
+        if pb:
+            lines.append(f"  watched {pb['studied']} top reels: typically {pb['median_seconds']:.0f}s long, a cut every "
+                         f"{pb['median_shot_seconds']:.1f}s"
+                         + (f", {int(pb['with_text'] * 100)}% with on-screen text" if pb.get("with_text") is not None else ""))
+            lines += [f"    why they work: {x}" for x in pb.get("notes", [])]
+            lines += [f"    idea: {x}" for x in pb.get("ideas", [])]
         lines.append("")
     if d.get("post_times"):
         lines.append(f"BEST TIMES (top posts' publish hours): {', '.join(d['post_times'])}")
@@ -313,7 +475,14 @@ def prompt_notes(cfg, game: str) -> str:
              f"{int(cs.get('with_emoji', 0) * 100)}% use emoji",
              "  opening lines of the best ones (learn the pattern, never copy):"]
     parts += [f"    - {c['line']}" for c in g.get("top_captions", [])[:5]]
-    return "\n".join(parts)[:1400]
+    if g.get("formats"):
+        parts.append("  kinds of reel among those top posts: " + ", ".join(
+            f"{FORMAT_NAMES.get(k['tag'], k['tag'])} {int(k['share'] * 100)}%" for k in g["formats"][:6]))
+    pb = g.get("playbook") or {}
+    if pb:
+        parts.append(f"  the top reels we watched run ~{pb['median_seconds']:.0f}s with a cut every "
+                     f"{pb['median_shot_seconds']:.1f}s" + ("; " + " / ".join(pb.get("notes", [])[:2]) if pb.get("notes") else ""))
+    return "\n".join(parts)[:1900]
 
 
 def evidence_text(cfg) -> str:
@@ -324,6 +493,12 @@ def evidence_text(cfg) -> str:
     for g, r in d["games"].items():
         out.append(f"  {g}: tags {' '.join(h['tag'] for h in r.get('hashtags', [])[:8])}; "
                    f"best openers: " + " | ".join(c["line"][:70] for c in r.get("top_captions", [])[:3]))
+        if r.get("formats"):
+            out.append("    kinds of reel: " + ", ".join(f"{k['tag']} {int(k['share'] * 100)}%" for k in r["formats"][:6]))
+        pb = r.get("playbook") or {}
+        if pb:
+            out.append(f"    watched {pb['studied']}: ~{pb['median_seconds']:.0f}s long, cut every {pb['median_shot_seconds']:.1f}s; "
+                       + " / ".join(pb.get("ideas", [])[:2]))
     if d.get("post_times"):
         out.append(f"  top posts go live around: {', '.join(d['post_times'])}")
     return "\n".join(out)

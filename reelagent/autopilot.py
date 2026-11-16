@@ -153,9 +153,8 @@ def _every(db: DB, job: str, minutes: float) -> bool:
     return datetime.now(timezone.utc) - datetime.fromisoformat(last) >= timedelta(minutes=minutes)
 
 
-def tick(cfg, db: DB, dry_run: bool = False, log=pipeline.log, due=None, process_inbox: bool = True) -> None:
-    """One cycle. `due` overrides the posting rule (the iPhone uses catch-up slots)."""
-    # 0. what's trending this week (daily, needs only the Claude key)
+def trends_job(cfg, db: DB, log=pipeline.log) -> None:
+    """What's trending this week (daily, needs an AI key)."""
     tcfg = cfg.get("trends") or {}
     if tcfg.get("enabled", True) and cfg.ai_available and \
             _every(db, "trends", float(tcfg.get("refresh_hours", 24)) * 60):
@@ -164,6 +163,37 @@ def tick(cfg, db: DB, dry_run: bool = False, log=pipeline.log, due=None, process
         except Exception as ex:
             log(f"! trends: {ex}", cfg)
         db.job_done("trends")
+
+
+def queue_order(cfg, db: DB) -> list:
+    """Queued reels in the order they will go out (games alternate, better reels first)."""
+    rows = [r for r in db.clips("queued") if pipeline.released(cfg.game_profile(r["game"]))]
+    weights = {}
+    lp = cfg.state_dir / "learnings.json"
+    if lp.exists():
+        try:
+            weights = json.loads(lp.read_text(encoding="utf-8")).get("game_weights", {}) or {}
+        except ValueError:
+            pass
+    last = db.last_posted()
+    last_game = last["game"] if last else None
+    out = []
+    while rows:
+        nxt = sorted(rows, key=lambda r: (1 if r["game"] == last_game else 0,
+                                          -(r["quality"] or 0) * (1 + 0.15 * (weights.get(r["game"], 1) or 1)),
+                                          r["created_at"]))[0]
+        out.append(nxt)
+        rows.remove(nxt)
+        last_game = nxt["game"]
+    held = [r for r in db.clips("queued") if not pipeline.released(cfg.game_profile(r["game"]))]
+    return out + held
+
+
+def tick(cfg, db: DB, dry_run: bool = False, log=pipeline.log, due=None, process_inbox: bool = True) -> None:
+    """One cycle. `due` overrides the posting rule (the iPhone and GitHub modes use catch-up slots)."""
+    # 0. what's trending this week
+    trends_job(cfg, db, log)
+    tcfg = cfg.get("trends") or {}
 
     # 1. new recordings → reels
     for rec in (pipeline.new_recordings(cfg, db) if process_inbox else []):

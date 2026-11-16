@@ -1,5 +1,6 @@
 """Reel Agent command line.  python -m reelagent <command>
 
+  cloud              GitHub mode: one visit (what the workflow runs every 15 minutes)
   phone [FILES]      iPhone: edit shared clips into reels, post one if it's a good time  [--game]
   phone-tick         iPhone automations: post a due reel, answer comments, refresh trends
   phone-setup        iPhone: install packages, keys, Instagram, speed test (one time)
@@ -143,6 +144,7 @@ def main(argv=None):
     up = sub.add_parser("update")
     up.add_argument("--repo")
     sub.add_parser("scout")
+    sub.add_parser("cloud")
     sv = sub.add_parser("serve")
     sv.add_argument("--host", default=None)
     sv.add_argument("--port", type=int, default=None)
@@ -168,6 +170,9 @@ def main(argv=None):
     sub.add_parser("audit")
     sub.add_parser("profile")
     a = ap.parse_args(argv)
+    if a.cmd == "cloud":       # GitHub mode loads its records first, so it builds its own settings
+        from . import cloud
+        sys.exit(cloud.run(a.config))
     cfg = Config(a.config)
 
     if a.cmd == "phone":

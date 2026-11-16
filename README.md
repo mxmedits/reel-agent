@@ -1,20 +1,94 @@
-# Reel Agent: hands-off Instagram for GTA 6, Call of Duty and FC 27 clips
+# Reel Agent: a hands-off Instagram page for GTA 6, Call of Duty and FC 27 clips
 
-You drop gameplay recordings in a folder. The agent does the rest:
+You add gameplay in the app. The agent does the rest, on GitHub's free computers, at no cost:
 
-1. **Finds the best moments.** Loudness spikes (gunfire, explosions, crowd roars) plus motion. Menus and loading screens are pushed down.
-2. **Claude watches each moment** (stills + your commentary), rates it 1–10 and skips the weak ones, cutscenes and story spoilers.
-3. **Edits a 9:16 reel.** A 1.6 s "payoff first" teaser, punch-zoom on the big moment, big hook text, word-by-word captions and your handle as a watermark. All text stays inside Instagram's safe zone.
-4. **Sound.** Music matched to the clip's mood, with the song's drop lined up on the payoff. If there's no music for that mood, an AI voiceover instead. Game audio ducks under the voice, and loudness is set to −14 LUFS.
-5. **Writes the post.** Claude drafts 3 hooks and the pack's hook scorer picks the best. The caption goes through the humanizer and the caption linter, with the 5-hashtag cap enforced.
-6. **Posts on schedule** through Instagram's official API (default 12:30, 18:00, 21:15) and alternates games.
-7. **Runs the account.** Replies to real comments, hides abusive ones, and pulls stats daily. It learns which hooks and games beat your median and feeds that into the next captions. A monthly profile score is written to `output/reports/`.
+1. **Finds the best moments** in the clip (loud, busy action; menus and loading screens are pushed down).
+2. **Watches each moment** with a free AI, rates it and skips weak ones, cutscenes and spoilers.
+3. **Decides what kind of reel to make** and edits it: classic, slow motion, instant replay, freeze frame,
+   meme caption, POV, top-3 countdown or montage, with a colour grade, sharpening, impact effects and captions.
+4. **Writes the post**: three hook options scored against each other, a caption and five hashtags, shaped by
+   what is working on Instagram this week.
+5. **Posts at the best times** through Instagram's official system, answers comments, reads the stats.
+6. **Keeps learning**: what top posts look like, how top reels are made, and which kinds of reel your own
+   viewers watch.
 
-Built-in safety: nothing GTA 6 is posted before the **Nov 19, 2026** launch (Rockstar takes down pre-release footage). Cutscenes and endings are skipped, and only the official API is used, so there are no bots and no password sharing.
+**The app:** https://mxmedits.github.io/reel-agent/ (add it to your iPhone Home Screen).
+**Alerts:** new reels, posts and problems are posted to the issue "Reel agent alerts", which GitHub sends you.
+
+Built-in safety: nothing GTA 6 is posted before the **Nov 19, 2026** launch (Rockstar takes down pre-release
+footage). Cutscenes and endings are skipped, and only Instagram's official API is used: no bots, no password.
+
+## 📱 The app
+
+| Tab | What it shows |
+|---|---|
+| Home | today's posting times, the **Add gameplay** button, what is up next |
+| Reels | every reel waiting to post (watch it, edit the caption, post now, skip) and every posted reel with its numbers |
+| Learned | what the agent read on Instagram this week, its trend research, and what works on your page |
+| Settings | watermark, reels per day, posting times, how creative it gets, keys and the Instagram connection |
+
+**Set it up once (about 20 minutes, all on the phone):**
+
+1. Open the app link in Safari, tap Share, then **Add to Home Screen**. Open it from the new icon.
+2. Tap **Create the key on GitHub**, choose the `reel-agent` repository, generate the key, paste it in the app.
+3. In the app: **Add the free AI key** (Google Gemini, from aistudio.google.com/apikey).
+4. In the app: **Connect Instagram** (the steps are on the screen; this is the long one).
+5. Tap **Add gameplay** and pick a clip from Photos.
+
+**How it works underneath.** The app uploads your clip to this repository in small parts. A GitHub Actions
+workflow (`.github/workflows/agent.yml`) runs every 15 minutes and whenever the app asks: it edits new clips,
+posts when a posting time has come, and saves its records to the `agent-data` branch, which the app reads.
+Keys are stored as encrypted repository secrets; the app encrypts them on your phone before sending.
+
+**Things to know:**
+- This repository is public (that is what makes GitHub free here), so clips you add and the reels made from
+  them can be seen by anyone who looks for the repository, before they are posted. Keys cannot be seen.
+- GitHub starts scheduled runs a few minutes late at busy times, so a reel can go out up to about 20 minutes
+  after its posting time.
+- Clips up to about 1 GB upload fine on Wi-Fi. Keep the app open until the upload finishes.
+- Voice commentary captions (Whisper) are not available in this mode.
+
+## 🎬 Kinds of reel, and how the agent chooses
+
+| Kind | What it does | Good for |
+|---|---|---|
+| Classic | the payoff flashes first, then the build-up, punch zoom, big hook | any strong moment |
+| Slow motion | the payoff at half speed | clean shots, goals, stunts |
+| Instant replay | the moment at full speed, then a slow-motion replay with a REPLAY tag | clutches, goals |
+| Freeze frame | freezes just before it happens, with a label, then plays out | fails, ambushes |
+| Meme caption | white caption bar with a relatable line | funny moments |
+| POV | a "POV: ..." line in a caption box | first-person moments |
+| Top 3 countdown | three moments from one session, #3 to #1 | long recordings |
+| Montage | four to six quick cuts of the best moments | long recordings |
+
+Some reels also end on a question ("Rate this /10") on a dimmed last second, to pull comments.
+
+For every clip the agent weighs: what the AI saw in it, what kinds of reel are common among top posts right
+now, what has worked on your page, and variety (a kind used in the last few reels is marked down). About one
+reel in five it tries a kind the page hasn't used lately, so it keeps learning. Change that under
+Settings, "How creative the agent gets", or `clips.creativity` in the settings file.
+
+## 🧠 What it learns, and from where
+
+- **Instagram's top posts** (every two days, through your own connection): the hashtags on them, how their
+  captions open, when they went live, and what kind of reel they are (POV, rate-this, top-N, clutch, fail...).
+- **How top reels are made**: it watches a few of them and measures how long they run and how often they cut,
+  and the AI describes their text and structure. Your reel length and montage pace follow that. The videos
+  are only measured, never kept or reposted.
+- **This week's top gaming Shorts** on YouTube (titles, views, lengths), if you add the free YouTube key.
+- **Daily web research** on formats, sounds, timely moments per game and changes to how Instagram ranks reels.
+- **Your own numbers** (daily): views of each kind of reel, hook formula, game and sound against your median.
+
+If Meta has not opened hashtag search to your app, the agent says so in the Learned tab and relies on the
+web research and YouTube data instead.
 
 ---
 
-## 💸 Run it for $0 (recommended while you're starting)
+# Other ways to run it
+
+The app above is the recommended way. These remain for anyone who wants their own server or computer.
+
+## 💸 A free cloud server instead of GitHub
 
 | Piece | Free option | Cost |
 |---|---|---|
@@ -51,7 +125,7 @@ You can switch any piece to a paid option later (Claude, a paid server) in Setti
   periods. If yours is ever reclaimed, create a new one with the same script and re-upload the zip.
 - Captions from the free model are a bit less sharp than Claude's. Switch in Settings when the page earns.
 
-## 📲 Run it ON your iPhone (no server, no PC, no Claude usage)
+## 📲 On the iPhone itself (a-Shell, for people comfortable typing commands)
 
 Your iPhone does everything: share a clip, it edits the reels, writes the caption and hashtags, and posts.
 It uses the free app **a-Shell** (Python + FFmpeg) and the built-in **Shortcuts** app. AI is free Gemini.

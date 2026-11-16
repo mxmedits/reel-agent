@@ -49,6 +49,8 @@ class DB:
         return r is not None
 
     def mark_source(self, path: Path, status: str, note: str = ""):
+        from .safety import scrub
+        note = scrub(note)
         st = path.stat() if path.exists() else None
         self.conn.execute(
             "INSERT OR REPLACE INTO sources(path,size,mtime,status,processed_at,note) VALUES(?,?,?,?,?,?)",
@@ -79,6 +81,9 @@ class DB:
         self.conn.commit()
 
     def update(self, clip_id: str, **f):
+        if isinstance(f.get("error"), str):      # error texts can quote a URL with a token in it
+            from .safety import scrub
+            f["error"] = scrub(f["error"])
         for k in ("copy_json", "render_json"):
             if isinstance(f.get(k), (dict, list)):
                 f[k] = json.dumps(f[k], ensure_ascii=False)

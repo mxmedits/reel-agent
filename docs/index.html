@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reel Agent</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Reel Agent">
+<meta name="theme-color" content="#1f1830">
+<style>
+@font-face{font-family:"Anton";src:url("lib/Anton-Regular.ttf") format("truetype");font-display:swap}
+:root{
+  color-scheme:dark;
+  --bg:#1f1830; --surface:#2a2140; --raise:#352a52; --line:#463a6b;
+  --ink:#f4efff; --ink2:#c3b9de; --muted:#9388b3;
+  --queued:#37d6bd; --next:#ffc24b; --live:#ff5fa2; --bad:#ff7a6b;
+  --display:"Anton","Arial Narrow",Impact,sans-serif;
+  --body:-apple-system,"SF Pro Text",system-ui,"Segoe UI",Roboto,sans-serif;
+  --safe-b:env(safe-area-inset-bottom,0px); --safe-t:env(safe-area-inset-top,0px);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg)}
+body{color:var(--ink);font:16px/1.45 var(--body);-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;
+  min-height:100dvh;padding:calc(var(--safe-t) + 10px) 0 calc(var(--safe-b) + 84px)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none;padding:0;-webkit-tap-highlight-color:transparent}
+a{color:var(--queued)}
+:focus-visible{outline:2px solid var(--next);outline-offset:2px;border-radius:6px}
+[hidden]{display:none!important}
+.vh{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip-path:inset(50%)}
+h1,h2,h3{font-family:var(--display);font-weight:400;letter-spacing:.012em;margin:0;line-height:1.08}
+h1{font-size:30px}
+h2{font-size:23px;margin:30px 0 12px}
+h3{font-size:18px}
+p{margin:0 0 10px}
+.wrap{max-width:560px;margin:0 auto;padding:0 18px}
+.muted{color:var(--muted)} .small{font-size:13.5px} .ink2{color:var(--ink2)}
+
+/* header */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:8px}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;background:var(--surface);
+  font-size:14px;font-weight:600;white-space:nowrap}
+.pill i{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none}
+.pill.on i{background:var(--queued)} .pill.paused i{background:var(--next)} .pill.off i{background:var(--bad)}
+.pill.busy i{background:var(--live);animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{50%{transform:scale(1.7);opacity:.45}}
+
+/* today's timeline: the day as an editing track, posting times as markers, a playhead for now */
+.track{position:relative;height:74px;margin:22px 0 4px}
+.track .rail{position:absolute;left:0;right:0;top:22px;height:14px;border-radius:4px;background:var(--surface);
+  background-image:repeating-linear-gradient(90deg,transparent 0 calc(6.25% - 1px),var(--line) calc(6.25% - 1px) 6.25%)}
+.track .slot{position:absolute;top:14px;width:12px;height:30px;margin-left:-6px;border-radius:3px;background:var(--queued)}
+.track .slot.done{background:var(--live)} .track .slot.next{background:var(--next)} .track .slot.idle{background:var(--line)}
+.track .slot span{position:absolute;top:36px;left:50%;transform:translateX(-50%);font-size:12.5px;color:var(--ink2);white-space:nowrap}
+.track .now{position:absolute;top:6px;width:2px;height:46px;margin-left:-1px;background:var(--ink)}
+.track .now::before{content:"";position:absolute;left:-5px;top:-6px;border:6px solid transparent;border-top-color:var(--ink)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--ink2)}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+
+/* buttons */
+.btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:54px;padding:12px 18px;
+  border-radius:14px;background:var(--raise);font-weight:650;font-size:16.5px;text-align:center}
+a.btn{text-decoration:none;color:var(--ink)}
+.btn.primary,a.btn.primary{background:var(--next);color:#231a05}
+.btn.danger{background:transparent;box-shadow:inset 0 0 0 1.5px var(--bad);color:var(--bad)}
+.btn.ghost{background:transparent;box-shadow:inset 0 0 0 1.5px var(--line)}
+.btn:disabled{opacity:.5}
+.btn.slim{min-height:44px;font-size:15px;width:auto;padding:8px 16px}
+.row{display:flex;gap:10px} .row > *{flex:1}
+
+/* game chooser */
+.seg{display:flex;gap:6px;margin:12px 0 0;overflow-x:auto;scrollbar-width:none}
+.seg::-webkit-scrollbar{display:none}
+.seg label{flex:none;position:relative}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:block;padding:8px 14px;border-radius:999px;background:var(--surface);font-size:14.5px;color:var(--ink2)}
+.seg input:checked + span{background:var(--ink);color:var(--bg);font-weight:650}
+.seg input:focus-visible + span{outline:2px solid var(--next);outline-offset:2px}
+
+.panel{background:var(--surface);border-radius:16px;padding:16px;margin-top:14px}
+.panel h3{margin-bottom:6px}
+.bar{height:8px;border-radius:4px;background:var(--bg);overflow:hidden;margin:8px 0 4px}
+.bar b{display:block;height:100%;width:0;background:var(--next);transition:width .25s}
+
+/* steps to finish setup (a real sequence, so it is numbered) */
+.steps{list-style:none;padding:0;margin:0;counter-reset:s}
+.steps li{counter-increment:s;display:flex;gap:12px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.steps li:first-child{border-top:0}
+.steps li::before{content:counter(s);flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;
+  background:var(--raise);font-family:var(--display);font-size:16px}
+.steps li.done::before{content:"✓";background:var(--queued);color:var(--bg);font-family:var(--body);font-weight:800}
+.steps li div{flex:1}
+.steps li.done div{color:var(--muted)}
+
+/* the queue as a strip of film: 9:16 frames with sprocket holes */
+.film{margin:0 -18px;padding:14px 18px;background:#150f22;
+  background-image:radial-gradient(circle at 9px 7px,var(--bg) 3.5px,transparent 4px),radial-gradient(circle at 9px calc(100% - 7px),var(--bg) 3.5px,transparent 4px);
+  background-size:18px 100%;display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none}
+.film::-webkit-scrollbar{display:none}
+.frame{flex:none;width:118px;scroll-snap-align:start;text-align:left;display:flex;flex-direction:column;align-self:flex-start}
+.frame .pic,.grid .pic{position:relative;aspect-ratio:9/16;border-radius:8px;overflow:hidden;background:var(--raise)}
+.pic img{width:100%;height:100%;object-fit:cover;display:block}
+.pic .tag{position:absolute;left:6px;bottom:6px;padding:3px 8px;border-radius:6px;background:rgba(21,15,34,.82);font-size:12px;font-weight:650}
+.pic .tag.next{background:var(--next);color:#231a05}
+.frame p{margin:7px 0 0;font-size:13px;line-height:1.3;color:var(--ink2)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 12px}
+.grid button{text-align:left;display:flex;flex-direction:column;align-self:start;min-width:0}
+.grid .hook{font-family:var(--display);font-size:17px;line-height:1.12;margin:8px 0 3px}
+.chip{display:inline-block;padding:3px 9px;border-radius:999px;background:var(--raise);font-size:12.5px;color:var(--ink2);margin:0 5px 5px 0}
+.chip.k{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+
+.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line);align-items:center}
+.list li:first-child{border-top:0}
+.list .thumb{flex:none;width:46px;aspect-ratio:9/16;border-radius:6px;overflow:hidden;background:var(--raise)}
+.list .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.list .body{flex:1;min-width:0}
+.list .hook{font-family:var(--display);font-size:16.5px;line-height:1.15}
+.stats{display:flex;gap:14px;font-size:13px;color:var(--ink2);margin-top:4px;flex-wrap:wrap}
+.stats b{color:var(--ink);font-weight:650}
+
+.meter{display:grid;grid-template-columns:minmax(96px,38%) 1fr 44px;gap:10px;align-items:center;font-size:14px;margin:7px 0}
+.meter .m{height:10px;border-radius:3px;background:var(--bg);overflow:hidden}
+.meter .m b{display:block;height:100%;background:var(--queued)}
+.meter span:last-child{text-align:right;color:var(--ink2)}
+
+/* forms */
+label.f{display:block;margin:14px 0 0;font-size:14.5px;color:var(--ink2)}
+label.f input,label.f select,label.f textarea,.input{display:block;width:100%;margin-top:6px;padding:13px 14px;border-radius:12px;
+  background:var(--bg);border:1.5px solid var(--line);color:var(--ink);font-size:16px}
+textarea{min-height:110px;resize:vertical}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px 0;border-top:1px solid var(--line)}
+.switch:first-of-type{border-top:0}
+.switch input{appearance:none;-webkit-appearance:none;flex:none;width:52px;height:32px;border-radius:999px;background:var(--line);position:relative;transition:background .15s}
+.switch input::after{content:"";position:absolute;left:3px;top:3px;width:26px;height:26px;border-radius:50%;background:var(--ink);transition:transform .15s}
+.switch input:checked{background:var(--queued)} .switch input:checked::after{transform:translateX(20px)}
+.checks{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.checks label{position:relative}
+.checks input{position:absolute;opacity:0}
+.checks span{display:block;padding:8px 13px;border-radius:10px;background:var(--bg);border:1.5px solid var(--line);font-size:14.5px;color:var(--ink2)}
+.checks input:checked + span{border-color:var(--queued);color:var(--ink)}
+.checks input:checked + span::before{content:"✓ ";color:var(--queued);font-weight:800}
+.checks input:focus-visible + span{outline:2px solid var(--next);outline-offset:2px}
+.keyrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 0;border-top:1px solid var(--line)}
+.keyrow:first-of-type{border-top:0}
+.ok{color:var(--queued);font-weight:650} .warn{color:var(--next);font-weight:650} .err{color:var(--bad)}
+pre.log{white-space:pre-wrap;word-break:break-word;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--ink2);
+  background:var(--bg);border-radius:10px;padding:12px;max-height:340px;overflow:auto;margin:10px 0 0}
+details summary{cursor:pointer;padding:6px 0;font-weight:600}
+ol.how{padding-left:20px;margin:10px 0;color:var(--ink2)} ol.how li{margin:7px 0}
+code{font:13.5px ui-monospace,Menlo,monospace;background:var(--bg);padding:2px 6px;border-radius:5px;white-space:nowrap}
+code.long{white-space:normal;word-break:break-word}
+
+/* tab bar */
+.tabs{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:center;background:rgba(31,24,48,.94);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line);padding-bottom:var(--safe-b);z-index:5}
+.tabs button{flex:1;max-width:140px;padding:13px 4px 11px;font-size:13.5px;color:var(--muted);font-weight:600;position:relative}
+.tabs button[aria-current="page"]{color:var(--ink)}
+.tabs button[aria-current="page"]::before{content:"";position:absolute;top:-1px;left:28%;right:28%;height:3px;border-radius:0 0 3px 3px;background:var(--next)}
+.tabs .dot{position:absolute;top:9px;margin-left:3px;width:7px;height:7px;border-radius:50%;background:var(--live)}
+
+/* bottom sheet */
+.scrim{position:fixed;inset:0;background:rgba(10,6,20,.62);z-index:9;display:flex;align-items:flex-end;justify-content:center}
+.sheet{width:100%;max-width:560px;max-height:92dvh;overflow:auto;background:var(--surface);border-radius:22px 22px 0 0;
+  padding:18px 18px calc(22px + var(--safe-b));animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(40px);opacity:.6}}
+.sheet .x{float:right;width:38px;height:38px;border-radius:50%;background:var(--raise);font-size:20px;line-height:1}
+.player{aspect-ratio:9/16;max-height:56dvh;margin:6px auto 14px;border-radius:12px;overflow:hidden;background:#000;display:grid;place-items:center}
+.player video,.player img{width:100%;height:100%;object-fit:contain;display:block}
+#toast{position:fixed;left:50%;bottom:calc(var(--safe-b) + 96px);transform:translateX(-50%);background:var(--ink);color:var(--bg);
+  padding:11px 18px;border-radius:12px;font-weight:600;font-size:15px;z-index:20;max-width:88vw;text-align:center}
+.empty{padding:26px 6px;text-align:center;color:var(--ink2)}
+.spin{width:18px;height:18px;border-radius:50%;border:2.5px solid currentColor;border-right-color:transparent;animation:rot .7s linear infinite;flex:none}
+@keyframes rot{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Reel Agent</h1>
+    <span id="state" class="pill"><i></i><span>Loading</span></span>
+  </header>
+  <main id="view" aria-live="polite"></main>
+</div>
+<nav class="tabs" id="tabs" hidden>
+  <button data-tab="home">Home</button>
+  <button data-tab="reels">Reels<span class="dot" id="reelsDot" hidden></span></button>
+  <button data-tab="learned">Learned</button>
+  <button data-tab="settings">Settings</button>
+</nav>
+<div id="sheetRoot"></div>
+<div id="toast" hidden role="status"></div>
+<input type="file" id="picker" class="vh" accept="video/*" multiple tabindex="-1" aria-hidden="true">
+
+<script src="lib/nacl-fast.min.js"></script>
+<script src="lib/sealedbox.js"></script>
+<script>
+"use strict";
+/* Reel Agent app. Talks to GitHub only: the agent's records live in the branch `agent-data`,
+   clips go up in 5 MB parts to a branch `inbox/<id>`, keys are saved as encrypted Actions secrets. */
+
+const qs = new URLSearchParams(location.search);
+const DEMO = qs.has("demo");
+const REPO = (() => {
+  const given = qs.get("repo") || localStorage.getItem("ra_repo");
+  if (given) return given;
+  const m = location.hostname.match(/^([^.]+)\.github\.io$/);
+  const seg = location.pathname.split("/").filter(Boolean)[0];
+  return m && seg ? `${m[1]}/${seg}` : "";
+})();
+const OWNER = REPO.split("/")[0] || "";
+const API = "https://api.github.com";
+const GRAPH = "https://graph.facebook.com/v25.0";
+const CHUNK = 5 * 1024 * 1024;
+
+const S = { token: localStorage.getItem("ra_token") || "", tab: ["home", "reels", "learned", "settings"].includes(qs.get("tab")) ? qs.get("tab") : "home", status: null, statusMissing: false,
+            working: false, lastRun: null, secrets: new Set(), pending: {}, upload: null, seenQueue: null, err: "" };
+
+const $ = (sel, el = document) => el.querySelector(sel);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const fmtN = (n) => n == null ? "–" : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e4 ? Math.round(n / 1e3) + "K" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(n);
+const fmtMB = (b) => b >= 1e9 ? (b / 1e9).toFixed(2) + " GB" : Math.max(1, Math.round(b / 1e6)) + " MB";
+const b64utf8 = (str) => btoa(unescape(encodeURIComponent(str)));
+
+function toast(msg, ms = 3200) {
+  const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), ms);
+}
+function when(iso) {            // "today 6:00 PM", "tomorrow 12:30 PM", "Wed 9:15 PM"
+  if (!iso) return "";
+  const d = new Date(iso), now = new Date();
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(d) - day(now)) / 864e5);
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (diff === 0) return d - now < 12 * 6e4 && d - now > -36e5 ? "any minute now" : `today ${time}`;
+  if (diff === 1) return `tomorrow ${time}`;
+  if (diff === -1) return `yesterday ${time}`;
+  return `${d.toLocaleDateString([], { weekday: "short", month: diff > 6 || diff < -6 ? "short" : undefined, day: diff > 6 || diff < -6 ? "numeric" : undefined })} ${time}`;
+}
+function ago(iso) {
+  if (!iso) return "never";
+  const m = Math.round((Date.now() - new Date(iso)) / 6e4);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+}
+
+/* ── GitHub ─────────────────────────────────────────────────────────────── */
+class ApiError extends Error { constructor(msg, status) { super(msg); this.status = status; } }
+async function gh(path, { method = "GET", body, accept = "application/vnd.github+json", raw = false } = {}) {
+  const url = path.startsWith("http") ? path : `${API}/repos/${REPO}${path}`;
+  let res;
+  try {
+    res = await fetch(url, { method, cache: "no-store", body: body ? JSON.stringify(body) : undefined,
+      headers: { Accept: accept, Authorization: `Bearer ${S.token}`, "X-GitHub-Api-Version": "2022-11-28",
+                 ...(body ? { "Content-Type": "application/json" } : {}) } });
+  } catch (e) { throw new ApiError("No connection to GitHub. Check your internet and try again.", 0); }
+  if (res.ok) return raw ? res : (res.status === 204 ? null : res.json());
+  let msg = ""; try { msg = (await res.json()).message || ""; } catch (e) {}
+  if (res.status === 401) throw new ApiError("GitHub didn't accept this phone's key. Connect again in Settings.", 401);
+  if (res.status === 403 && /not accessible|permission/i.test(msg)) throw new ApiError("This phone's key is missing a permission. Create a new key from the link in Settings.", 403);
+  if (res.status === 403 && /rate limit/i.test(msg)) throw new ApiError("GitHub is asking the app to slow down. Wait a minute and try again.", 429);
+  throw new ApiError(msg || `GitHub answered ${res.status}`, res.status);
+}
+async function retry(fn, tries = 4) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (e) { if (i >= tries - 1 || [401, 403, 404, 422].includes(e.status)) throw e; await sleep(1500 * (i + 1)); }
+  }
+}
+const rawUrl = (p) => DEMO ? demoCover(p) : `https://raw.githubusercontent.com/${REPO}/agent-data/${p}`;
+
+async function loadStatus() {
+  if (DEMO) { S.status = demoStatus(); return; }
+  try {
+    const res = await gh(`/contents/status.json?ref=agent-data&t=${Date.now()}`, { accept: "application/vnd.github.raw+json", raw: true });
+    S.status = await res.json(); S.statusMissing = false;
+  } catch (e) { if (e.status === 404) { S.status = null; S.statusMissing = true; } else throw e; }
+}
+async function loadRuns() {
+  if (DEMO) return;
+  const d = await gh("/actions/runs?per_page=8");
+  const runs = (d.workflow_runs || []).filter((r) => r.name === "Reel Agent");
+  S.working = runs.some((r) => r.status !== "completed");
+  S.lastRun = runs.find((r) => r.status === "completed") || null;
+}
+async function loadSecrets() {
+  if (DEMO) { S.secrets = new Set(["GEMINI_API_KEY"]); return; }
+  try { const d = await gh("/actions/secrets?per_page=100"); S.secrets = new Set((d.secrets || []).map((s) => s.name)); } catch (e) {}
+}
+async function wake() { if (!DEMO) await gh("/actions/workflows/agent.yml/dispatches", { method: "POST", body: { ref: "main" } }); S.working = true; }
+async function sendCommand(cmd) {
+  if (DEMO) { toast("Demo: nothing is sent"); return; }
+  const name = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}.json`;
+  await retry(() => gh(`/contents/commands/${name}`, { method: "PUT",
+    body: { message: `app: ${cmd.type}`, branch: "agent-data", content: b64utf8(JSON.stringify(cmd)) } }));
+  await wake();
+}
+async function setSecret(name, value) {
+  const pk = await gh("/actions/secrets/public-key");
+  const sealed = sealBox(new TextEncoder().encode(value), Uint8Array.from(atob(pk.key), (c) => c.charCodeAt(0)));
+  let bin = ""; sealed.forEach((b) => (bin += String.fromCharCode(b)));
+  await gh(`/actions/secrets/${name}`, { method: "PUT", body: { encrypted_value: btoa(bin), key_id: pk.key_id } });
+  S.secrets.add(name);
+}
+
+/* ── uploading a clip in parts ──────────────────────────────────────────── */
+const toB64 = (blob) => new Promise((res, rej) => { const r = new FileReader();
+  r.onload = () => res(String(r.result).slice(String(r.result).indexOf(",") + 1)); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+async function uploadFile(file, game, onProgress) {
+  const n = Math.max(1, Math.ceil(file.size / CHUNK)), shas = new Array(n);
+  let next = 0, done = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++; if (i >= n) return;
+      const content = await toB64(file.slice(i * CHUNK, Math.min(file.size, (i + 1) * CHUNK)));
+      shas[i] = (await retry(() => gh("/git/blobs", { method: "POST", body: { content, encoding: "base64" } }), 6)).sha;
+      onProgress(++done / n);
+    }
+  };
+  await Promise.all([worker(), worker()]);
+  const meta = { v: 1, name: file.name || "clip.mp4", game, size: file.size, parts: n, type: file.type, at: new Date().toISOString() };
+  const tree = await retry(() => gh("/git/trees", { method: "POST", body: { tree: [
+    { path: "meta.json", mode: "100644", type: "blob", content: JSON.stringify(meta) },
+    ...shas.map((sha, i) => ({ path: `part-${String(i).padStart(5, "0")}`, mode: "100644", type: "blob", sha })) ] } }));
+  const commit = await retry(() => gh("/git/commits", { method: "POST", body: { message: `clip: ${meta.name}`, tree: tree.sha, parents: [] } }));
+  const d = new Date(), p = (x) => String(x).padStart(2, "0");
+  const id = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${Math.random().toString(36).slice(2, 6)}`;
+  await retry(() => gh("/git/refs", { method: "POST", body: { ref: `refs/heads/inbox/${id}`, sha: commit.sha } }));
+}
+async function startUpload(files) {
+  if (!files.length) return;
+  if (DEMO) { toast("Demo: nothing is uploaded"); return; }
+  const game = ($('input[name="game"]:checked') || {}).value || "auto";
+  const total = files.reduce((a, f) => a + f.size, 0);
+  S.upload = { files: files.map((f) => ({ name: f.name, size: f.size, p: 0, state: "waiting" })), total, done: false, error: "" };
+  render();
+  let lock = null; try { lock = await navigator.wakeLock?.request("screen"); } catch (e) {}
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const u = S.upload.files[i]; u.state = "sending";
+      await uploadFile(files[i], game, (p) => { u.p = p; paintUpload(); });
+      u.state = "sent"; u.p = 1; paintUpload();
+    }
+    await wake();
+    S.upload.done = true;
+    toast("Sent. The agent is editing now.");
+  } catch (e) { S.upload.error = e.message || String(e); }
+  try { lock?.release(); } catch (e) {}
+  render(); poll(true);
+}
+function paintUpload() {
+  const u = S.upload; if (!u) return;
+  const sent = u.files.reduce((a, f) => a + f.size * f.p, 0);
+  const bar = $("#upBar"), txt = $("#upTxt");
+  if (bar) bar.style.width = `${Math.round((sent / Math.max(u.total, 1)) * 100)}%`;
+  if (txt) txt.textContent = `${fmtMB(sent)} of ${fmtMB(u.total)} sent`;
+}
+
+/* ── Instagram connection (runs in this browser, saved as encrypted secrets) ─ */
+async function fb(url) {
+  let res; try { res = await fetch(url, { cache: "no-store" }); } catch (e) { throw new Error("Couldn't reach Facebook. Check your internet and try again."); }
+  const d = await res.json();
+  if (d.error) throw new Error(d.error.message || "Facebook refused the request.");
+  return d;
+}
+async function findInstagram(appId, secret, shortToken) {
+  const e = encodeURIComponent;
+  const ll = await fb(`${GRAPH}/oauth/access_token?grant_type=fb_exchange_token&client_id=${e(appId)}&client_secret=${e(secret)}&fb_exchange_token=${e(shortToken)}`);
+  const pages = await fb(`${GRAPH}/me/accounts?fields=${e("name,access_token,instagram_business_account{id,username}")}&access_token=${e(ll.access_token)}`);
+  const found = (pages.data || []).filter((p) => p.instagram_business_account)
+    .map((p) => ({ page: p.name, id: p.instagram_business_account.id, username: p.instagram_business_account.username || "", token: p.access_token }));
+  if (!found.length) throw new Error("None of your Facebook Pages has an Instagram professional account linked. Switch Instagram to Creator, link it to your Page, then generate a new token.");
+  return found;
+}
+async function saveInstagram(a) {
+  await setSecret("IG_USER_ID", a.id);
+  await setSecret("IG_ACCESS_TOKEN", a.token);
+  await sendCommand({ type: "settings", data: { ig_username: a.username } });
+}
+
+/* ── views ──────────────────────────────────────────────────────────────── */
+function setState() {
+  const el = $("#state"), st = S.status, a = st?.agent;
+  let cls = "", txt = "Setting up";
+  if (S.working) { cls = "busy"; txt = "Working"; }
+  else if (!st) { cls = ""; txt = S.token ? "Starting" : "Not connected"; }
+  else if (a.paused) { cls = "paused"; txt = "Paused"; }
+  else if (!a.connected) { cls = "off"; txt = "No Instagram yet"; }
+  else { cls = "on"; txt = "On autopilot"; }
+  el.className = `pill ${cls}`; el.lastElementChild.textContent = txt;
+}
+const mins = (hhmm) => { const [h, m] = String(hhmm).split(":").map(Number); return h * 60 + m; };
+function trackHtml(st) {
+  const sch = st.schedule, t0 = 8 * 60, span = 16 * 60;                 // the day from 8 AM to midnight
+  const now = new Date(), nowM = now.getHours() * 60 + now.getMinutes();
+  const pos = (m) => Math.min(100, Math.max(0, ((m - t0) / span) * 100));
+  const times = [...sch.times].sort((a, b) => mins(a) - mins(b)).slice(0, sch.max_per_day);
+  const hasQueue = st.queue.length > 0;
+  let nextMarked = false;
+  const slots = times.map((t, i) => {
+    let cls = "idle";
+    if (i < sch.posted_today) cls = "done";
+    else if (hasQueue && !nextMarked && !st.agent.paused && st.agent.connected) { cls = "next"; nextMarked = true; }
+    else if (hasQueue && st.queue.length > i - sch.posted_today && !st.agent.paused && st.agent.connected) cls = "";
+    const label = new Date(2000, 0, 1, ...String(t).split(":").map(Number)).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return `<div class="slot ${cls}" style="left:${pos(mins(t))}%"><span>${esc(label)}</span></div>`;
+  }).join("");
+  return `<div class="track" role="img" aria-label="Today's posting times: ${esc(times.join(", "))}. ${sch.posted_today} posted so far.">
+      <div class="rail"></div>${slots}<div class="now" style="left:${pos(nowM)}%"></div></div>
+    <div class="legend"><span><b style="background:var(--live)"></b>posted</span><span><b style="background:var(--next)"></b>next up</span>
+      <span><b style="background:var(--queued)"></b>planned</span><span><b style="background:var(--line)"></b>nothing queued</span></div>
+    <p class="small muted" style="margin-top:10px">Posting times follow ${esc(sch.source)}.</p>`;
+}
+function setupSteps(st) {
+  const a = st?.agent || {};
+  const ai = (a.ai && a.ai !== "none") || S.secrets.has("GEMINI_API_KEY") || S.secrets.has("ANTHROPIC_API_KEY");
+  const ig = a.connected || S.secrets.has("IG_ACCESS_TOKEN");
+  const first = (st?.queue.length || 0) + (st?.posted.length || 0) + (st?.uploads.length || 0) > 0;
+  if (ai && ig && first) return "";
+  return `<div class="panel"><h3>Finish setting up</h3><ol class="steps">
+    <li class="${ai ? "done" : ""}"><div><b>Add the free AI key</b><br><span class="small muted">Lets the agent watch your clips and write captions that fit them.</span></div>
+      ${ai ? "" : `<button class="btn slim" data-act="aiKey">Add</button>`}</li>
+    <li class="${ig ? "done" : ""}"><div><b>Connect Instagram</b><br><span class="small muted">So the agent can post for you. Until then it only makes reels.</span></div>
+      ${ig ? "" : `<button class="btn slim" data-act="igWizard">Connect</button>`}</li>
+    <li class="${first ? "done" : ""}"><div><b>Add your first gameplay clip</b><br><span class="small muted">Use the yellow button above.</span></div></li>
+  </ol></div>`;
+}
+function uploadPanel() {
+  const u = S.upload; if (!u) return "";
+  const rows = u.files.map((f) => `<div class="small" style="display:flex;justify-content:space-between;gap:10px;margin-top:6px">
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>
+      <span class="${f.state === "sent" ? "ok" : "muted"}">${f.state === "sent" ? "sent" : f.state === "sending" ? "sending" : fmtMB(f.size)}</span></div>`).join("");
+  if (u.error) return `<div class="panel"><h3>The upload stopped</h3><p class="err">${esc(u.error)}</p>
+      <p class="small muted">Clips that show "sent" are safe. Add the others again.</p><button class="btn slim" data-act="clearUpload">OK</button></div>`;
+  if (u.done) return `<div class="panel"><h3>Sent to the agent</h3><p class="ink2">It is cutting reels from ${u.files.length === 1 ? "your clip" : `your ${u.files.length} clips`} now. This takes a few minutes; you can close the app. New reels show up under Reels.</p>
+      <button class="btn slim" data-act="clearUpload">OK</button></div>`;
+  return `<div class="panel"><h3>Sending your gameplay</h3><div class="bar"><b id="upBar"></b></div>
+      <p class="small ink2" id="upTxt">Starting</p>${rows}<p class="small muted" style="margin-top:10px">Keep this page open until it finishes.</p></div>`;
+}
+function homeView() {
+  const st = S.status;
+  if (!st) return `<h2>Waking the agent up</h2><p class="ink2">Its first visit hasn't finished yet. This page fills in by itself within a few minutes.</p>
+    ${S.err ? `<p class="err">${esc(S.err)}</p>` : ""}<button class="btn" data-act="refresh">Check again</button>`;
+  const games = { auto: "Let the agent tell", ...st.settings.games };
+  const next = st.queue[0];
+  const up = st.uploads.slice(0, 3).map((u) => `<li><div class="body"><div>${esc(u.name)}</div>
+      <div class="small ${u.status === "failed" ? "err" : "muted"}">${u.status === "done" ? `${u.reels.length} reel${u.reels.length === 1 ? "" : "s"} made` : u.status === "retrying" ? "trying again on the next visit" : esc(u.note || u.status)}, ${ago(u.at)}</div></div></li>`).join("");
+  return `
+    ${trackHtml(st)}
+    <div style="margin-top:22px">
+      <label class="btn primary" for="picker" role="button" tabindex="0" id="addBtn">Add gameplay</label>
+      <div class="seg" role="radiogroup" aria-label="Which game is it?">
+        ${Object.entries(games).map(([k, v], i) => `<label><input type="radio" name="game" value="${esc(k)}" ${i === 0 ? "checked" : ""}><span>${esc(v)}</span></label>`).join("")}
+      </div>
+    </div>
+    ${uploadPanel()}
+    ${setupSteps(st)}
+    ${st.note ? `<div class="panel"><h3>The last visit hit a problem</h3><pre class="log">${esc(st.note)}</pre></div>` : ""}
+    <h2>Up next</h2>
+    ${next ? `<div class="film">${st.queue.slice(0, 8).map((c, i) => frameHtml(c, i)).join("")}</div>`
+           : `<div class="empty">Nothing is waiting to post. Add gameplay and the agent cuts reels from it.</div>`}
+    ${up ? `<h2>Recent clips you added</h2><ul class="list">${up}</ul>` : ""}
+    <p class="small muted" style="margin-top:26px">${S.working ? "The agent is working right now." : `The agent last checked in ${ago(st.updated)}. It visits every 15 minutes.`}</p>`;
+}
+function frameHtml(c, i) {
+  return `<button class="frame" data-clip="${esc(c.id)}">
+    <div class="pic">${c.cover ? `<img loading="lazy" alt="" src="${esc(rawUrl(c.cover))}">` : ""}
+      <span class="tag ${i === 0 ? "next" : ""}">${esc(i === 0 ? "next" : c.game_name)}</span></div>
+    <p>${esc(when(c.eta) || "queued")}</p></button>`;
+}
+function reelsView() {
+  const st = S.status; if (!st) return homeView();
+  const q = st.queue.map((c, i) => `<button data-clip="${esc(c.id)}">
+      <div class="pic">${c.cover ? `<img loading="lazy" alt="" src="${esc(rawUrl(c.cover))}">` : ""}
+        <span class="tag ${i === 0 ? "next" : ""}">${esc(S.pending[c.id] || (i === 0 ? "next" : c.style_name || c.game_name))}</span></div>
+      <div class="hook">${esc(c.hook)}</div>
+      <div class="small muted">${esc(when(c.eta) || "queued")}</div></button>`).join("");
+  const posted = st.posted.map((c) => `<li><div class="thumb">${c.cover ? `<img loading="lazy" alt="" src="${esc(rawUrl(c.cover))}">` : ""}</div>
+      <div class="body"><div class="hook">${esc(c.hook)}</div>
+        <div class="stats">${c.stats ? `<span><b>${fmtN(c.stats.views ?? c.stats.reach)}</b> views</span><span><b>${fmtN(c.stats.likes)}</b> likes</span><span><b>${fmtN(c.stats.shares)}</b> sends</span>` : `<span>stats arrive within a day</span>`}</div>
+        <div class="small muted">${esc(c.style_name)}${c.trial ? ", trial reel" : ""}, ${esc(when(c.posted_at))}</div></div>
+      ${c.url ? `<a class="btn slim ghost" href="${esc(c.url)}" target="_blank" rel="noopener">Open</a>` : ""}</li>`).join("");
+  const bad = st.problems.map((c) => `<li><div class="body"><div class="hook">${esc(c.hook)}</div><div class="small err">${esc(c.error || "could not be posted")}</div></div>
+      <button class="btn slim" data-cmd="retry" data-id="${esc(c.id)}">Try again</button></li>`).join("");
+  return `
+    <h2>Up next</h2>
+    ${q ? `<div class="grid">${q}</div>` : `<div class="empty">Nothing is waiting to post. Add gameplay on the Home tab.</div>`}
+    ${bad ? `<h2>Needs a look</h2><ul class="list">${bad}</ul>` : ""}
+    <h2>Posted</h2>
+    ${posted ? `<p class="small muted">${fmtN(st.totals.posted)} reels, ${fmtN(st.totals.views)} views and ${fmtN(st.totals.shares)} sends in total.</p><ul class="list">${posted}</ul>`
+             : `<div class="empty">Reels the agent has posted show up here with their numbers.</div>`}`;
+}
+const KIND = { pov: "POV", relatable: "Relatable \"when you…\"", wait_for_it: "Wait for it", rate: "Rate this", ranking: "Top-N ranking",
+  clutch: "Clutch or skill shot", fail: "Fail", funny: "Funny", edit: "Edit or montage", tips: "Tips and secrets", comparison: "Comparison",
+  series: "Series (part N)", question: "Ends on a question", news: "News and updates", challenge: "Challenge", satisfying: "Satisfying" };
+function learnedView() {
+  const st = S.status; if (!st) return homeView();
+  const L = st.learned || {}, names = st.settings.games, styles = st.settings.all_styles;
+  let ig = "";
+  if (L.instagram && Object.keys(L.instagram.games || {}).length) {
+    ig = Object.entries(L.instagram.games).map(([g, d]) => {
+      const pb = d.playbook;
+      return `<div class="panel"><h3>${esc(names[g] || g)}</h3>
+        <p class="small muted">From ${d.posts} top posts, read ${ago(L.instagram.updated)}.</p>
+        ${d.kinds.length ? `<p class="small ink2" style="margin:12px 0 2px">Kinds of reel among them</p>` + d.kinds.map((k) => `<div class="meter"><span>${esc(KIND[k.tag] || k.tag)}</span><span class="m"><b style="width:${Math.round(k.share * 100)}%"></b></span><span>${Math.round(k.share * 100)}%</span></div>`).join("") : ""}
+        ${pb ? `<p style="margin-top:12px">The top reels the agent watched run about <b>${Math.round(pb.median_seconds)} seconds</b> with a cut every <b>${pb.median_shot_seconds.toFixed(1)} s</b>${pb.with_text != null ? `; ${Math.round(pb.with_text * 100)}% carry on-screen text` : ""}.</p>
+          ${(pb.notes || []).map((n) => `<p class="small ink2">${esc(n)}</p>`).join("")}` : ""}
+        <p class="small ink2" style="margin:12px 0 6px">Hashtags on top posts</p><div>${d.tags.map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>
+        ${d.openers.length ? `<p class="small ink2" style="margin:10px 0 4px">How the best captions open</p>${d.openers.map((o) => `<p class="small">“${esc(o)}”</p>`).join("")}` : ""}
+      </div>`;
+    }).join("");
+  } else {
+    const why = (L.instagram?.notes || []).find((n) => /hashtag search/i.test(n));
+    ig = `<div class="empty">${st.agent.connected ? (why ? "Instagram hasn't opened hashtag search to your app yet, so the agent is learning from web research and YouTube instead." : "The agent reads Instagram's top posts on one of its next visits.") : "Once Instagram is connected, the agent reads the top posts for each game here: their hashtags, captions, kinds of reel and posting times."}</div>`;
+  }
+  const t = L.trends;
+  const page = L.page && Object.keys(L.page.by_kind || {}).length
+    ? Object.entries(L.page.by_kind).sort((a, b) => (b[1].x || 0) - (a[1].x || 0)).map(([k, v]) => `<div class="meter"><span>${esc(styles[k] || k)}</span><span class="m"><b style="width:${Math.min(100, Math.round((v.x || 0) * 50))}%;background:var(--live)"></b></span><span>${(v.x || 0).toFixed(1)}x</span></div>`).join("")
+      + `<p class="small muted">Views of each kind of reel against your page's usual. From ${L.page.reels} reels; confidence ${esc(L.page.confidence || "low")}.</p>`
+    : `<div class="empty">After a few posts the agent compares the kinds of reel it has made and leans toward the ones your viewers watch.</div>`;
+  return `
+    <h2>On Instagram right now</h2>${ig}
+    <h2>Trend research</h2>
+    ${t ? `<div class="panel"><p>${esc(t.summary)}</p>
+        ${t.reel_types.length ? `<p class="small ink2" style="margin:10px 0 6px">Kinds of reel to lean on</p><div>${t.reel_types.map((x) => `<span class="chip">${esc(styles[x] || x)}</span>`).join("")}</div>` : ""}
+        ${t.new_ideas.length ? `<p class="small ink2" style="margin:10px 0 4px">Trending, but the agent can't make these yet</p>${t.new_ideas.map((x) => `<p class="small">${esc(x)}</p>`).join("")}` : ""}
+        ${t.algorithm.length ? `<p class="small ink2" style="margin:10px 0 4px">Changes to how Instagram ranks reels</p>${t.algorithm.map((x) => `<p class="small">${esc(x)}</p>`).join("")}` : ""}
+        <p class="small muted" style="margin-top:8px">Researched ${esc(t.date || "")}.</p></div>`
+       : `<div class="empty">${st.agent.ai === "none" ? "Add the free AI key in Settings and the agent researches what is working for gaming reels every day." : "The first research finishes on one of the next visits."}</div>`}
+    <h2>What works on your page</h2>${page}`;
+}
+function settingsView() {
+  const st = S.status, s = st?.settings, a = st?.agent || {};
+  const has = (n) => S.secrets.has(n);
+  const key = (label, ok, act, okText = "saved", btn = "Add") => `<div class="keyrow"><div>${label}<br><span class="small ${ok ? "ok" : "muted"}">${ok ? okText : "not set"}</span></div>
+      <button class="btn slim ${ok ? "ghost" : ""}" data-act="${act}">${ok ? "Change" : btn}</button></div>`;
+  const tz = s?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const zones = [...new Set([tz, Intl.DateTimeFormat().resolvedOptions().timeZone, "America/Toronto", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Vancouver", "Europe/London", "Europe/Berlin", "Asia/Dubai", "Asia/Kolkata", "Asia/Singapore", "Australia/Sydney"])];
+  const form = !s ? "" : `
+    <h2>Your page</h2>
+    <form id="pageForm" class="panel">
+      <label class="f">Watermark on your reels<input name="handle" value="${esc(s.handle === "@yourpage" ? "" : s.handle)}" placeholder="@yourpage" autocapitalize="none" autocomplete="off"></label>
+      <label class="f">Your time zone<select name="timezone">${zones.map((z) => `<option ${z === tz ? "selected" : ""}>${esc(z)}</option>`).join("")}</select></label>
+      <div class="row"><label class="f">Reels per day<select name="max_per_day">${[1, 2, 3, 4, 5].map((n) => `<option ${n === s.max_per_day ? "selected" : ""}>${n}</option>`).join("")}</select></label>
+        <label class="f">Reels per clip<select name="per_video">${[1, 2, 3, 4, 5].map((n) => `<option ${n === s.per_video ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
+      <div style="margin-top:12px">
+        <div class="switch"><div>Pause posting<br><span class="small muted">The agent keeps making reels and holds them.</span></div><input type="checkbox" name="paused" ${a.paused ? "checked" : ""}></div>
+        <div class="switch"><div>Pick the best posting times for me<br><span class="small muted">From when top posts go live, then from when your followers are online.</span></div><input type="checkbox" name="auto_times" ${s.auto_times ? "checked" : ""}></div>
+        <div id="timesBox" ${s.auto_times ? "hidden" : ""}><div class="row">${[0, 1, 2].map((i) => `<label class="f">Time ${i + 1}<input type="time" name="t${i}" value="${esc(s.post_times[i] || "")}"></label>`).join("")}</div></div>
+        <div class="switch"><div>Answer comments<br><span class="small muted">Replies to real comments, hides abusive ones.</span></div><input type="checkbox" name="reply" ${s.reply_to_comments ? "checked" : ""}></div>
+        <div class="switch"><div>Use trending Instagram sounds</div><input type="checkbox" name="audio" ${s.trending_audio ? "checked" : ""}></div>
+      </div>
+      <button class="btn primary" style="margin-top:14px">Save changes</button>
+    </form>
+    <h2>How creative the agent gets</h2>
+    <form id="creativeForm" class="panel">
+      <label class="f">How often it tries a kind of reel it hasn't used lately
+        <select name="creativity">${[[0, "Never: always the safest kind"], [0.2, "Sometimes: 1 reel in 5"], [0.4, "Often: 2 reels in 5"], [0.7, "Most of the time"]].map(([v, t]) => `<option value="${v}" ${Math.abs(v - s.creativity) < 0.06 ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <p class="small ink2" style="margin:14px 0 0">Kinds of reel it may make</p>
+      <div class="checks">${Object.entries(s.all_styles).map(([k, v]) => `<label><input type="checkbox" name="style" value="${esc(k)}" ${s.styles.includes(k) ? "checked" : ""}><span>${esc(v)}</span></label>`).join("")}</div>
+      <label class="f">Colour grade<select name="look">${[["auto", "Let the agent choose per clip"], ["vice", "Vice: neon, warm and teal"], ["tactical", "Tactical: crisp teal-orange"], ["stadium", "Stadium: bright broadcast"], ["cinematic", "Cinematic: film look"], ["clean", "Clean: barely touched"], ["none", "None"]].map(([v, t]) => `<option value="${v}" ${v === s.look ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <div style="margin-top:12px"><div class="switch"><div>End some reels on a question<br><span class="small muted">"Rate this /10" on the last second, to pull comments.</span></div><input type="checkbox" name="end_cards" ${s.end_cards ? "checked" : ""}></div></div>
+      <label class="f">Pages to learn from (optional)<input name="bench" value="${esc((s.benchmark_pages || []).join(", "))}" placeholder="pagename, anotherpage" autocapitalize="none" autocomplete="off"></label>
+      <button class="btn primary" style="margin-top:14px">Save changes</button>
+    </form>`;
+  return `${form}
+    <h2>Connections</h2>
+    <div class="panel">
+      ${key("Instagram", a.connected || has("IG_ACCESS_TOKEN"), "igWizard", a.connected ? `connected${a.username ? " as @" + esc(a.username) : ""}${a.followers != null ? `, ${fmtN(a.followers)} followers` : ""}` : "saved, active on the next visit", "Connect")}
+      ${key("AI key (free Gemini)", has("GEMINI_API_KEY") || a.ai === "gemini", "aiKey", a.ai === "gemini" ? "working" : "saved, active on the next visit")}
+      ${key("YouTube key (optional)", has("YOUTUBE_API_KEY") || a.youtube, "ytKey")}
+      <div class="keyrow"><div>This phone's GitHub key<br><span class="small ok">connected to ${esc(REPO)}</span></div><button class="btn slim ghost" data-act="signOut">Remove</button></div>
+    </div>
+    <h2>Activity</h2>
+    <div class="panel">
+      <p class="small ink2">${st ? `Last visit ${ago(st.updated)}.` : "No visit yet."} ${S.lastRun && S.lastRun.conclusion !== "success" ? `<span class="err">The last run ended as "${esc(S.lastRun.conclusion)}".</span>` : ""}</p>
+      <div class="row"><button class="btn slim" data-act="wakeNow">Run the agent now</button>
+        <a class="btn slim ghost" href="https://github.com/${esc(REPO)}/issues?q=${encodeURIComponent('"Reel agent alerts"')}" target="_blank" rel="noopener">Alerts</a></div>
+      <details style="margin-top:10px"><summary>What the agent did</summary><pre class="log">${esc((st?.log || []).slice(-80).join("\n") || "Nothing yet.")}</pre></details>
+    </div>
+    <p class="small muted" style="margin-top:18px">Version ${esc(a.version || "–")}. Your clips and the agent's records are stored in your GitHub repository ${esc(REPO)}, which is public.</p>`;
+}
+function connectView() {
+  const link = `https://github.com/settings/personal-access-tokens/new?name=${encodeURIComponent("Reel Agent app")}&description=${encodeURIComponent("Lets the Reel Agent app add clips and change settings")}&target_name=${encodeURIComponent(OWNER)}&expires_in=none&contents=write&actions=write&secrets=write`;
+  return `<h2>Connect this phone</h2>
+    <p class="ink2">The agent lives in your GitHub repository <b>${esc(REPO || "?")}</b>. This app needs a key to hand it clips and settings. You make the key once.</p>
+    <div class="panel"><ol class="how">
+      <li>Open GitHub with the button below and sign in.</li>
+      <li>Under <b>Repository access</b> pick <b>Only select repositories</b>, then choose <b>${esc(REPO.split("/")[1] || "reel-agent")}</b>.</li>
+      <li>Scroll down and tap <b>Generate token</b>.</li>
+      <li>Copy the key (it starts with <code>github_pat_</code>), come back here and paste it.</li></ol>
+      <a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Create the key on GitHub</a>
+    </div>
+    <form id="connectForm">
+      <label class="f">Paste the key<input name="token" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="github_pat_…" required></label>
+      <p class="err small" id="connectErr" hidden></p>
+      <button class="btn primary" style="margin-top:14px">Connect</button>
+    </form>
+    <p class="small muted" style="margin-top:16px">The key stays on this phone and only works for that one repository. You can delete it on GitHub at any time.</p>`;
+}
+
+/* ── sheets ─────────────────────────────────────────────────────────────── */
+function openSheet(html, onMount) {
+  closeSheet();
+  const root = $("#sheetRoot");
+  root.innerHTML = `<div class="scrim"><div class="sheet" role="dialog" aria-modal="true"><button class="x" data-act="closeSheet" aria-label="Close">×</button>${html}</div></div>`;
+  root.firstElementChild.addEventListener("click", (e) => { if (e.target === root.firstElementChild) closeSheet(); });
+  onMount && onMount(root);
+}
+function closeSheet() { const v = $("#sheetRoot video"); if (v && v.src.startsWith("blob:")) URL.revokeObjectURL(v.src); $("#sheetRoot").innerHTML = ""; }
+
+async function openClip(id) {
+  const st = S.status, c = [...st.queue, ...st.posted, ...st.problems].find((x) => x.id === id); if (!c) return;
+  const queued = c.status === "queued" || c.status === "ready";
+  openSheet(`
+    <h3 style="font-size:24px;margin:4px 46px 10px 0">${esc(c.hook)}</h3>
+    <div class="player" id="player">${c.cover ? `<img alt="" src="${esc(rawUrl(c.cover))}">` : ""}</div>
+    <div><span class="chip k">${esc(c.game_name)}</span><span class="chip k">${esc(c.style_name || c.style)}</span>${c.look ? `<span class="chip k">${esc(c.look)} grade</span>` : ""}${c.seconds ? `<span class="chip k">${Math.round(c.seconds)} s</span>` : ""}${c.sound ? `<span class="chip k">${esc(c.sound)}</span>` : ""}</div>
+    ${c.style_why ? `<p class="small muted" style="margin-top:6px">Made as ${esc((c.style_name || "").toLowerCase())}: ${esc(c.style_why)}.</p>` : ""}
+    ${c.error ? `<p class="small err">Last try: ${esc(c.error)}</p>` : ""}
+    ${queued ? `<form id="capForm">
+        <label class="f">Caption<textarea name="caption">${esc(c.caption)}</textarea></label>
+        <label class="f">Hashtags (5 at most)<input name="tags" value="${esc(c.hashtags.join(" "))}" autocapitalize="none"></label>
+        <button class="btn" style="margin-top:12px">Save caption</button></form>
+      <p class="small muted" style="margin:14px 0 8px">Goes out ${esc(when(c.eta) || "at the next posting time")} unless you choose otherwise.</p>
+      <div class="row"><button class="btn primary" data-cmd="post_now" data-id="${esc(c.id)}">Post now</button>
+        <button class="btn danger" data-cmd="skip" data-id="${esc(c.id)}">Skip this reel</button></div>`
+     : `<p style="margin-top:12px;white-space:pre-wrap">${esc(c.caption)}</p><p class="ink2 small">${esc(c.hashtags.join(" "))}</p>
+        ${c.url ? `<a class="btn" href="${esc(c.url)}" target="_blank" rel="noopener">Open on Instagram</a>` : ""}`}`,
+  (root) => {
+    const f = $("#capForm", root);
+    if (f) f.addEventListener("submit", async (e) => {
+      e.preventDefault(); const b = f.querySelector("button"); b.disabled = true;
+      try { await sendCommand({ type: "caption", id: c.id, caption: f.caption.value, hashtags: f.tags.value.split(/[\s,]+/).filter(Boolean) });
+        c.caption = f.caption.value; toast("Caption saved"); } catch (err) { toast(err.message); }
+      b.disabled = false;
+    });
+  });
+  if (c.preview && !DEMO) {
+    try {
+      const res = await gh(`/contents/${c.preview}?ref=agent-data`, { accept: "application/vnd.github.raw", raw: true });
+      const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "video/mp4" }));
+      const p = $("#player"); if (p) p.innerHTML = `<video src="${url}" controls playsinline loop preload="auto" poster="${esc(rawUrl(c.cover))}"></video>`;
+    } catch (e) {}
+  }
+}
+function keySheet(kind) {
+  const info = {
+    aiKey: { title: "Free AI key", secret: "GEMINI_API_KEY", ph: "AIza…", steps: `<ol class="how"><li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> and sign in with a Google account.</li><li>Tap <b>Create API key</b>, then copy it.</li><li>Paste it here.</li></ol><p class="small muted">Google's free tier has daily limits; when one is reached the agent writes simpler captions until the next day.</p>` },
+    ytKey: { title: "YouTube key", secret: "YOUTUBE_API_KEY", ph: "AIza…", steps: `<ol class="how"><li>Open <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">Google Cloud's YouTube Data API page</a>, create a project if asked, and tap <b>Enable</b>.</li><li>Go to <b>Credentials</b>, tap <b>Create credentials</b>, then <b>API key</b>, and copy it.</li><li>Paste it here.</li></ol><p class="small muted">Optional. It lets the agent see this week's top gaming Shorts as extra trend data.</p>` },
+  }[kind];
+  openSheet(`<h3 style="font-size:24px;margin:4px 46px 6px 0">${info.title}</h3>${info.steps}
+    <form id="keyForm"><label class="f">Paste the key<input name="v" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="${info.ph}" required></label>
+    <p class="err small" id="keyErr" hidden></p><button class="btn primary" style="margin-top:14px">Save key</button></form>`,
+  (root) => $("#keyForm", root).addEventListener("submit", async (e) => {
+    e.preventDefault(); const f = e.target, b = f.querySelector("button"); b.disabled = true;
+    try { if (DEMO) throw new Error("Demo: nothing is saved"); await setSecret(info.secret, f.v.value.trim()); await wake(); closeSheet(); toast("Key saved. The agent uses it from its next visit."); render(); }
+    catch (err) { const p = $("#keyErr"); p.textContent = err.message; p.hidden = false; }
+    b.disabled = false;
+  }));
+}
+function igSheet() {
+  openSheet(`<h3 style="font-size:24px;margin:4px 46px 6px 0">Connect Instagram</h3>
+    <p class="ink2">The agent posts through Instagram's own system for apps, so nobody gets your password. This part takes about 15 minutes, once.</p>
+    <ol class="how">
+      <li>In the Instagram app: <b>Settings</b>, <b>Account type and tools</b>, switch to a <b>Creator</b> account.</li>
+      <li>Link the account to a Facebook Page you manage (create a Page if you have none).</li>
+      <li>Open <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">developers.facebook.com/apps</a>, tap <b>Create App</b> and choose the <b>Business</b> type.</li>
+      <li>In the app's <b>Settings</b>, <b>Basic</b>: copy the <b>App ID</b> and the <b>App secret</b>.</li>
+      <li>Open <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener">Graph API Explorer</a>, pick your app, add these permissions, then tap <b>Generate Access Token</b> and copy it:<br>
+        <code class="long">instagram_basic, instagram_content_publish, instagram_manage_comments, instagram_manage_insights, pages_show_list, pages_read_engagement, business_management</code></li>
+    </ol>
+    <form id="igForm">
+      <label class="f">App ID<input name="app" inputmode="numeric" autocomplete="off" required></label>
+      <label class="f">App secret<input name="secret" type="password" autocomplete="off" autocapitalize="none" required></label>
+      <label class="f">Access token<input name="tok" type="password" autocomplete="off" autocapitalize="none" required></label>
+      <p class="err small" id="igErr" hidden></p>
+      <div id="igPick"></div>
+      <button class="btn primary" style="margin-top:14px">Connect</button>
+    </form>
+    <p class="small muted" style="margin-top:12px">The app swaps your token for one that doesn't expire and saves it encrypted in your GitHub repository. Nothing is sent anywhere else.</p>`,
+  (root) => $("#igForm", root).addEventListener("submit", async (e) => {
+    e.preventDefault(); const f = e.target, b = f.querySelector("button.primary"), err = $("#igErr"); b.disabled = true; err.hidden = true;
+    try {
+      if (DEMO) throw new Error("Demo: nothing is saved");
+      const found = await findInstagram(f.app.value.trim(), f.secret.value.trim(), f.tok.value.trim());
+      const done = async (a) => { await saveInstagram(a); closeSheet(); toast(`Connected @${a.username}. The agent starts posting from its next visit.`); render(); poll(true); };
+      if (found.length === 1) await done(found[0]);
+      else {
+        $("#igPick").innerHTML = `<p class="ink2" style="margin-top:12px">Which account should the agent post to?</p>` + found.map((a, i) => `<button type="button" class="btn" style="margin-top:8px" data-i="${i}">@${esc(a.username)} (${esc(a.page)})</button>`).join("");
+        $("#igPick").onclick = async (ev) => { const i = ev.target.dataset.i; if (i == null) return; ev.target.disabled = true; try { await done(found[+i]); } catch (x) { err.textContent = x.message; err.hidden = false; } };
+      }
+    } catch (x) { err.textContent = x.message; err.hidden = false; }
+    b.disabled = false;
+  }));
+}
+
+/* ── rendering + events ─────────────────────────────────────────────────── */
+function render() {
+  const view = $("#view"), tabs = $("#tabs");
+  if (!REPO) { view.innerHTML = `<h2>Open this page from your repository's address</h2><p class="ink2">It should look like <code>yourname.github.io/reel-agent</code>.</p>`; return; }
+  if (!S.token && !DEMO) { tabs.hidden = true; view.innerHTML = connectView(); setState(); bindConnect(); return; }
+  tabs.hidden = false;
+  tabs.querySelectorAll("button").forEach((b) => b.toggleAttribute("aria-current", false));
+  tabs.querySelector(`[data-tab="${S.tab}"]`).setAttribute("aria-current", "page");
+  const sy = window.scrollY;
+  view.innerHTML = { home: homeView, reels: reelsView, learned: learnedView, settings: settingsView }[S.tab]();
+  setState(); paintUpload();
+  if (S.tab === "settings") bindSettings();
+  if (S.status) {                                         // a dot on the Reels tab when new reels arrived
+    const ids = S.status.queue.map((c) => c.id).join(",");
+    if (S.seenQueue === null || S.tab === "reels") S.seenQueue = ids;
+    $("#reelsDot").hidden = S.seenQueue === ids;
+  }
+  window.scrollTo(0, sy);
+}
+function bindConnect() {
+  const f = $("#connectForm"); if (!f) return;
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault(); const b = f.querySelector("button"), err = $("#connectErr"); b.disabled = true; err.hidden = true;
+    S.token = f.token.value.trim();
+    try {
+      await gh("");                                       // can it see the repository?
+      await gh("/actions/secrets/public-key");            // secrets permission
+      await gh("/git/blobs", { method: "POST", body: { content: "ok", encoding: "utf-8" } });   // contents: write (changes nothing)
+      await gh("/actions/workflows");                     // actions permission
+      localStorage.setItem("ra_token", S.token); localStorage.setItem("ra_repo", REPO);
+      toast("Connected"); await poll(true);
+    } catch (x) {
+      S.token = "";
+      err.textContent = x.status === 404 ? "GitHub can't find the repository with this key. In step 2, make sure you selected it." : x.status === 403 ? "The key is missing a permission. Use the button above so Contents, Actions and Secrets are set for you." : x.message;
+      err.hidden = false; b.disabled = false;
+    }
+  });
+}
+function bindSettings() {
+  const pf = $("#pageForm"), cf = $("#creativeForm");
+  if (pf) {
+    pf.auto_times.addEventListener("change", () => ($("#timesBox").hidden = pf.auto_times.checked));
+    pf.addEventListener("submit", async (e) => {
+      e.preventDefault(); const b = pf.querySelector("button.primary"); b.disabled = true;
+      let handle = pf.handle.value.trim(); if (handle && !handle.startsWith("@")) handle = "@" + handle;
+      const times = [pf.t0.value, pf.t1.value, pf.t2.value].filter(Boolean).sort();
+      const data = { handle, timezone: pf.timezone.value, autopilot: { paused: pf.paused.checked },
+        schedule: { max_per_day: +pf.max_per_day.value, auto_times: pf.auto_times.checked, ...(times.length && !pf.auto_times.checked ? { post_times: times } : {}) },
+        clips: { per_video: +pf.per_video.value }, engagement: { reply_to_comments: pf.reply.checked }, instagram: { trending_audio: pf.audio.checked } };
+      try { await sendCommand({ type: "settings", data }); toast("Saved. The agent picks it up on its next visit."); poll(true); } catch (x) { toast(x.message); }
+      b.disabled = false;
+    });
+  }
+  if (cf) cf.addEventListener("submit", async (e) => {
+    e.preventDefault(); const b = cf.querySelector("button.primary"); b.disabled = true;
+    const styles = [...cf.querySelectorAll('input[name="style"]:checked')].map((i) => i.value);
+    if (!styles.length) { toast("Keep at least one kind of reel"); b.disabled = false; return; }
+    const bench = cf.bench.value.split(/[\s,]+/).map((x) => x.replace(/^@/, "")).filter(Boolean).slice(0, 10);
+    const data = { clips: { creativity: +cf.creativity.value, styles, style: "auto", end_cards: cf.end_cards.checked, fx: { look: cf.look.value } }, trends: { benchmark_pages: bench } };
+    try { await sendCommand({ type: "settings", data }); toast("Saved. New reels follow it."); poll(true); } catch (x) { toast(x.message); }
+    b.disabled = false;
+  });
+}
+document.addEventListener("click", async (e) => {
+  const t = e.target.closest("[data-tab],[data-act],[data-clip],[data-cmd]"); if (!t) return;
+  if (t.dataset.tab) { S.tab = t.dataset.tab; render(); window.scrollTo(0, 0); return; }
+  if (t.dataset.clip) return openClip(t.dataset.clip);
+  if (t.dataset.cmd) {
+    const id = t.dataset.id, cmd = t.dataset.cmd;
+    if (cmd === "post_now" && !S.status.agent.connected) return toast("Connect Instagram first (Settings)");
+    if (cmd === "skip" && !confirm("Skip this reel? It won't be posted.")) return;
+    if (cmd === "post_now" && !confirm("Post this reel to Instagram now?")) return;
+    t.disabled = true;
+    try { await sendCommand({ type: cmd, id }); S.pending[id] = cmd === "post_now" ? "posting" : cmd === "skip" ? "skipping" : "retrying";
+      closeSheet(); toast(cmd === "post_now" ? "Posting. It appears under Posted in a few minutes." : cmd === "skip" ? "Skipped" : "Trying again"); render(); poll(true); }
+    catch (x) { toast(x.message); t.disabled = false; }
+    return;
+  }
+  const act = t.dataset.act;
+  if (act === "closeSheet") closeSheet();
+  else if (act === "aiKey" || act === "ytKey") keySheet(act);
+  else if (act === "igWizard") igSheet();
+  else if (act === "refresh") poll(true);
+  else if (act === "clearUpload") { S.upload = null; render(); }
+  else if (act === "wakeNow") { try { await wake(); toast("The agent is starting a visit"); render(); poll(true); } catch (x) { toast(x.message); } }
+  else if (act === "signOut") { if (confirm("Remove the GitHub key from this phone? The agent keeps running; this app just can't control it until you connect again.")) { localStorage.removeItem("ra_token"); S.token = ""; S.status = null; render(); } }
+});
+$("#picker").addEventListener("change", (e) => { const files = [...e.target.files]; e.target.value = ""; startUpload(files); });
+document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.id === "addBtn") { e.preventDefault(); $("#picker").click(); } if (e.key === "Escape") closeSheet(); });
+
+let pollTimer = null, polling = false;
+async function poll(now = false) {
+  clearTimeout(pollTimer);
+  if (polling) return; polling = true;
+  if ((S.token || DEMO) && (now || !document.hidden)) {
+    try {
+      const before = S.status?.updated;
+      await Promise.all([loadStatus(), loadRuns(), S.secrets.size ? null : loadSecrets()]);
+      S.err = "";
+      if (S.status?.updated !== before) S.pending = {};
+      const busy = !!$("#sheetRoot").firstElementChild || (S.upload && !S.upload.done && !S.upload.error) || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || "");
+      if (!busy) render(); else setState();
+    } catch (e) {
+      if (e.status === 401) { localStorage.removeItem("ra_token"); S.token = ""; render(); }
+      else { S.err = e.message; setState(); if (!S.status) render(); }
+    }
+  }
+  polling = false;
+  pollTimer = setTimeout(poll, S.working || (S.upload && S.upload.done) || S.statusMissing ? 12000 : 60000);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(true); });
+
+/* ── demo data (open the page with ?demo to look around without a key) ──── */
+function demoCover(p) {
+  const hue = [...p].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 90 160"><defs><linearGradient id="g" x2="0" y2="1"><stop offset="0" stop-color="hsl(${hue},55%,34%)"/><stop offset="1" stop-color="hsl(${(hue + 50) % 360},60%,14%)"/></linearGradient></defs><rect width="90" height="160" fill="url(#g)"/><rect y="52" width="90" height="51" fill="hsl(${(hue + 20) % 360},50%,46%)"/><rect x="14" y="28" width="62" height="6" rx="2" fill="#fff"/><rect x="24" y="38" width="42" height="6" rx="2" fill="#fff"/></svg>`;
+  return "data:image/svg+xml," + encodeURIComponent(svg);
+}
+function demoStatus() {
+  const now = new Date(), iso = (h, m, d = 0) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + d, h, m).toISOString();
+  const clip = (id, game, gname, hook, style, sname, extra = {}) => ({ id, game, game_name: gname, status: "queued", hook, caption: `${gname}: ${hook.toLowerCase()}. Send this to your duo.`, hashtags: ["#" + game, "#gaming", "#clips"], quality: 8, hook_score: 71, style, style_name: sname, style_why: "common among top posts right now", look: "vice", seconds: 19, cover: `c/${id}.jpg`, preview: null, sound: null, ...extra });
+  return { v: 1, updated: new Date(Date.now() - 4 * 6e4).toISOString(), note: "",
+    agent: { paused: false, connected: true, username: "frameperfect", followers: 1840, ai: "gemini", youtube: true, handle: "@frameperfect", timezone: "America/Toronto", version: "demo" },
+    schedule: { times: ["12:40", "17:40", "20:40"], source: "when top posts in your niche go live", max_per_day: 3, posted_today: now.getHours() >= 13 ? 1 : 0, active_hours: ["10:00", "23:30"] },
+    settings: { handle: "@frameperfect", timezone: "America/Toronto", max_per_day: 3, auto_times: true, post_times: ["12:30", "18:00", "21:15"], per_video: 3, length: 24, style: "auto",
+      styles: ["classic", "slowmo", "replay", "freeze", "meme_bar", "pov", "top3", "montage"], creativity: 0.2, end_cards: true, look: "auto", reply_to_comments: true, trending_audio: true, benchmark_pages: [],
+      games: { gta6: "GTA 6", cod: "Call of Duty", fc27: "EA Sports FC 27" },
+      all_styles: { classic: "Classic", slowmo: "Slow motion", replay: "Instant replay", freeze: "Freeze frame", meme_bar: "Meme caption", pov: "POV", top3: "Top 3 countdown", montage: "Montage" } },
+    queue: [clip("gta6-0007", "gta6", "GTA 6", "3 COPS, 1 BRIDGE, 0 BRAKES", "freeze", "Freeze frame", { eta: iso(17, 40) }),
+            clip("cod-0012", "cod", "Call of Duty", "ONE MAG, FOUR DOWN", "replay", "Instant replay", { eta: iso(20, 40) }),
+            clip("fc27-0004", "fc27", "EA Sports FC 27", "RATE THIS FINISH /10", "slowmo", "Slow motion", { eta: iso(12, 40, 1) }),
+            clip("gta6-0008", "gta6", "GTA 6", "POV: YOU TRUSTED THE RAMP", "pov", "POV", { eta: iso(17, 40, 1) })],
+    posted: [{ ...clip("cod-0011", "cod", "Call of Duty", "THEY NEVER SAW IT COMING", "classic", "Classic"), status: "posted", posted_at: iso(12, 41), url: "https://www.instagram.com/", stats: { views: 18400, likes: 1210, comments: 64, shares: 388, saved: 97 } },
+             { ...clip("gta6-0006", "gta6", "GTA 6", "TOP 3 VICE CITY MOMENTS", "top3", "Top 3 countdown"), status: "posted", posted_at: iso(20, 42, -1), url: "https://www.instagram.com/", stats: { views: 52300, likes: 4020, comments: 211, shares: 1730, saved: 402 } }],
+    problems: [], uploads: [{ name: "IMG_4412.MOV", status: "done", reels: ["gta6-0007", "gta6-0008"], note: "", at: new Date(Date.now() - 50 * 6e4).toISOString() }],
+    totals: { posted: 23, views: 412000, likes: 31800, shares: 9600 },
+    learned: { trends: { date: "today", summary: "Freeze-frame fails and instant replays of clutch plays are carrying gaming Reels this week; GTA 6 launch-week chaos clips with a plain one-line caption are getting the most sends.", reel_types: ["freeze", "replay", "pov"], new_ideas: ["Split-screen reaction with the streamer's face"], algorithm: [] },
+      instagram: { updated: new Date(Date.now() - 9 * 36e5).toISOString(), notes: [], games: {
+        gta6: { posts: 96, tags: ["#gta6", "#vicecity", "#gta6clips", "#gtaonline", "#rockstargames"], kinds: [{ tag: "fail", share: 0.34 }, { tag: "pov", share: 0.22 }, { tag: "wait_for_it", share: 0.18 }, { tag: "ranking", share: 0.09 }], playbook: { studied: 3, median_seconds: 17, median_shot_seconds: 2.4, with_text: 1, notes: ["Opens on the crash, then rewinds to show how it started."] }, openers: ["Vice City cops said no", "Who else does this first?"] },
+        cod: { posts: 88, tags: ["#callofduty", "#codclips", "#warzone", "#blackops7"], kinds: [{ tag: "clutch", share: 0.41 }, { tag: "rate", share: 0.17 }, { tag: "funny", share: 0.12 }], playbook: null, openers: ["One mag. Four down.", "Clutch or kick?"] } } },
+      page: { reels: 23, confidence: "medium", by_kind: { freeze: { x: 1.7, n: 4 }, replay: { x: 1.3, n: 5 }, classic: { x: 0.9, n: 9 }, meme_bar: { x: 0.7, n: 5 } } } },
+    log: ["[demo] nothing here is real"] };
+}
+
+render();
+poll(true);
+</script>
+</body>
+</html>

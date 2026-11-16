@@ -42,11 +42,17 @@ otherwise a comment prompt ("rate it /10"). No hashtags in the caption text. No 
 - Loading screens, menus, pause screens, black frames or nothing happening: quality <= 3.
 - Flag graphic violence (gore, dismemberment) honestly.
 - music_mood: the background music that fits this clip: hype, intense, epic, chill, funny or suspense.
-- edit_style: classic (payoff-first teaser + punch zoom + big hook), slowmo (slow motion on the payoff: \
-clutch shots, goals, stunts), or meme_bar (white caption bar on top with a relatable line: fails, funny \
-or "POV" moments). Follow the trend brief when it fits the clip.
-- meme_line: for meme_bar only, a relatable one-liner in sentence case (max 12 words), e.g. \
-"when you think you finally lost the cops".
+- edit_style: the kind of reel that suits THIS clip best. Options: classic (payoff-first teaser + punch zoom + \
+big hook: any strong moment), slowmo (slow motion on the payoff: clean shots, goals, stunts), replay (full \
+speed, then a slow-motion instant replay: clutches, goals), freeze (freeze-frame with a label just before it \
+happens: fails, ambushes, "he has no idea" moments), meme_bar (white caption bar with a relatable line: \
+funny or relatable moments), pov (a "POV: ..." caption box: first-person moments the viewer can put \
+themselves in). Be creative: do not default to classic when another kind fits, and follow the trend brief.
+- meme_line: ALWAYS write one, it is used for meme_bar and pov: a relatable one-liner in sentence case \
+(max 12 words), e.g. "when you think you finally lost the cops" or "POV: you trusted the bridge".
+- freeze_line: 2-4 words for the freeze-frame label, about what is about to happen, e.g. "he has no idea".
+- end_card: a 2-4 word question for the last second that makes people comment ("Rate this /10", \
+"Clutch or luck?"), or empty when the clip should just end.
 - look: the colour grade a pro editor would give these stills: vice (neon, warm pink highlights, teal \
 shadows; sunny or night city), tactical (crisp teal-orange; shooters), stadium (bright broadcast; football), \
 cinematic (film look; story, scenery, drives), night (dark scenes that need lifting) or clean (already looks great).
@@ -63,8 +69,10 @@ SCHEMA = """{
   "graphic_violence": <true|false>,
   "hook_options": ["<hook 1>", "<hook 2>", "<hook 3>"],
   "music_mood": "<hype|intense|epic|chill|funny|suspense>",
-  "edit_style": "<classic|slowmo|meme_bar>",
-  "meme_line": "<only for meme_bar, else empty>",
+  "edit_style": "<classic|slowmo|replay|freeze|meme_bar|pov>",
+  "meme_line": "<relatable one-liner or POV line>",
+  "freeze_line": "<2-4 words>",
+  "end_card": "<2-4 word question, or empty>",
   "look": "<vice|tactical|stadium|cinematic|night|clean>",
   "impact": <true|false>,
   "instagram_caption": "<caption without hashtags>",
@@ -129,6 +137,11 @@ def _finish(copy: dict, profile: dict) -> dict:
     from .looks import LOOKS
     if copy.get("look") not in LOOKS:
         copy["look"] = None
+    from .formats import FORMATS
+    if copy.get("edit_style") not in FORMATS:
+        copy["edit_style"] = None
+    for k, n in (("meme_line", 14), ("freeze_line", 4), ("end_card", 5)):
+        copy[k] = " ".join(str(copy.get(k) or "").split()[:n])
 
     cap, report = toolkit.humanize(str(copy.get("instagram_caption", "")))
     copy["instagram_caption"] = cap
@@ -158,8 +171,9 @@ def fallback(profile: dict, series_no: int) -> dict:
     return _finish(copy, profile)
 
 
-def write_copy(cfg, video: Path, moment, profile: dict, transcript: str, series_no: int) -> dict:
-    """Return the copy dict for one moment (AI if a key is set, else template)."""
+def write_copy(cfg, video: Path, moment, profile: dict, transcript: str, series_no: int, brief: str = "") -> dict:
+    """Return the copy dict for one moment (AI if a key is set, else template).
+    `brief` adds an instruction for special reels (e.g. a top-3 countdown built from several moments)."""
     if not cfg.ai_available:
         return fallback(profile, series_no)
     from . import trends   # late import: trends uses parse_json from this module
@@ -179,6 +193,7 @@ def write_copy(cfg, video: Path, moment, profile: dict, transcript: str, series_
         f"Page call to action: {profile.get('cta', '')}\n"
         + (f"\nWhat has worked on THIS page so far (from its own stats, trust this over defaults):\n{notes}\n" if notes else "")
         + (f"\nWhat's trending this week (live research):\n{trend}\n" if trend else "")
+        + (f"\nSPECIAL: {brief}\n" if brief else "")
         + f"\nHook formulas (use three different ones, adapted to gaming):\n{toolkit.formula_menu()}\n\n"
         f"Reply with JSON exactly in this shape:\n{SCHEMA}"
     )

@@ -1,0 +1,6 @@
+# GitHub mode. Light on purpose: this installs on every 15-minute visit.
+# ffmpeg (and the optional free voice) are added only on visits that edit a clip.
+numpy>=1.24
+PyYAML>=6.0
+requests>=2.31
+tzdata>=2024.1

@@ -7,7 +7,7 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-from . import captions, editor, highlights, looks, media, scout, transcribe, voiceover
+from . import captions, editor, formats, highlights, looks, media, scout, transcribe, voiceover
 from . import music as mus
 from .db import DB
 
@@ -15,7 +15,8 @@ VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".ts", ".flv"}
 
 
 def log(msg: str, cfg=None):
-    line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
+    from .safety import scrub
+    line = scrub(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
     print(line, flush=True)
     if cfg is not None:
         try:
@@ -69,11 +70,12 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
         db.mark_source(path, "skipped", "pre-release footage")
         return []
 
-    length = float(c["length"])
+    length = formats.reel_length(cfg, game)
     want = int(c["per_video"])
     moments = highlights.find_moments(path, info, length, count=max(want * 2, want + 2),
                                       min_gap=float(c["min_gap"]))
-    log(f"  found {len(moments)} candidate moments", cfg)
+    log(f"  found {len(moments)} candidate moments" + (f" (reels ~{length:.0f}s, from what top reels run at)"
+                                                        if abs(length - float(c["length"])) >= 1 else ""), cfg)
 
     candidates = []
     for i, m in enumerate(moments, 1):
@@ -99,98 +101,54 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
 
     candidates.sort(key=lambda x: (x[1]["quality"], x[0].score), reverse=True)
     mus.ensure_library(cfg)
-    mcfg, vcfg = cfg.get("music", {}) or {}, cfg.get("voiceover", {}) or {}
-    recent_tracks = [json.loads(r["render_json"] or "{}").get("music") for r in db.clips()[-6:]]
+    ctx = {"recent_tracks": [json.loads(r["render_json"] or "{}").get("music") for r in db.clips()[-6:]],
+           "used_styles": []}
     made = []
-    for m, copy, words in candidates[:want]:
-        n = db.next_series(game)
-        clip_id = f"{game}-{n:04d}"
-        folder = cfg.output / "clips" / clip_id
-        folder.mkdir(parents=True, exist_ok=True)
-        teaser = bool(c.get("teaser_hook", True)) and not copy.get("graphic_violence")
-        payoff_in_video = (editor.TEASER_PRE + editor.TEASER_POST if teaser and m.peak - m.start > 4 else 0) \
-            + (m.peak - m.start)
 
-        # edit style: Claude picks per clip using the trend brief (or a fixed style from config)
-        allowed = c.get("styles") or ["classic", "slowmo", "meme_bar"]
-        style = c.get("style", "auto")
-        if style == "auto":
-            style = copy.get("edit_style") if copy.get("edit_style") in allowed else "classic"
+    # a long recording with plenty of moments also gets one compilation, in place of the weakest single reel
+    clean = [x for x in candidates if not x[1].get("graphic_violence")]
+    comp = formats.compilation(cfg, db, game, len(clean), info.duration, want, seed=f"{path.name}-{len(candidates)}")
+    singles = candidates[:max(want - 1, 1)] if comp else candidates[:want]
 
-        # music: a trending Instagram sound is attached at posting time when that's on; otherwise the
-        # library track for Claude's mood, with its drop lined up on the payoff
-        ig_sound = bool((cfg.get("instagram") or {}).get("trending_audio", True) and cfg.ig_user_id and cfg.ig_token)
-        track = None if ig_sound else mus.pick_track(cfg, game, copy.get("music_mood"), recent_tracks)
-        seek, delay = (mus.alignment(track, payoff_in_video)
-                       if track and mcfg.get("sync_drop", True) else (0.0, 0.0))
-        if track:
-            recent_tracks.append(str(track))
+    for m, copy, words in singles:
+        style, why = formats.choose(cfg, db, game, copy, ctx["used_styles"],
+                                    seed=f"{game}-{db.peek_series(game)}-{m.peak:.1f}")
+        clip_id = _produce(cfg, db, path, info, profile, game, m, copy, words, style, why, [], ctx)
+        if clip_id:
+            made.append(clip_id)
 
-        # voiceover: when there's no commentary and no music (auto), or always
-        voice_wav = None
-        transcript = " ".join(w["w"] for w in words)
-        mode = vcfg.get("mode", "auto")
-        if voiceover.wanted(cfg, transcript) and (mode == "always" or not (track or ig_sound)):
-            ready, why = voiceover.engine_ready(cfg)
-            if not ready:
-                log(f"  (voiceover skipped: {why})", cfg)
-            else:
-                try:
-                    lines = voiceover.write_script(cfg, path, m, copy, profile)
-                    vwords = voiceover.build(cfg, lines, m.end - m.start, folder / "voiceover.wav")
-                    if vwords:
-                        voice_wav = folder / "voiceover.wav"
-                        words = words or vwords
-                        copy["voiceover"] = lines
-                        if vcfg.get("disclose_ai_voice", True):
-                            copy["instagram_caption"] = copy["instagram_caption"].rstrip() + "\n\nAI voiceover"
-                except Exception as e:
-                    log(f"  ! voiceover failed ({e}); posting without it", cfg)
-
+    if comp:
         try:
-            stats = media.tone_stats(path, m.start, m.end - m.start)
-        except Exception:
-            stats = None
-        look = looks.plan(cfg, game, stats, ai_pick=copy.get("look"), impact=copy.get("impact", True) is not False,
-                          graphic=bool(copy.get("graphic_violence")))
-        spec = editor.RenderSpec(
-            source=path, info=info, start=m.start, end=m.end, peak=m.peak,
-            layout=profile.get("layout", "blur"), hook=copy["hook_text"], handle=cfg.get("handle", ""),
-            words=words, teaser=teaser,
-            punch=bool(c.get("punch_zoom", True)), fps=int(c["fps"]), crf=int(c["crf"]),
-            preset=c.get("preset", "veryfast"), font=c.get("font", "Anton"),
-            music=track, music_volume=float(mcfg.get("volume", 0.55)),
-            game_volume=float(mcfg.get("game_volume", 0.6)), music_seek=seek, music_delay=delay,
-            voice=voice_wav, style=style, meme_line=str(copy.get("meme_line") or ""),
-            look=look, encoder=c.get("encoder", "auto"),
-        )
-        t0 = time.time()
-        result = editor.render(spec, folder / "reel.mp4")
-        media.grab_frame(folder / "reel.mp4", result["cover_ms"] / 1000, folder / "cover.jpg", width=1080)
-        (folder / "instagram_caption.txt").write_text(captions.instagram_text(copy), encoding="utf-8")
-        render_meta = {**result, "layout": spec.layout, "teaser": spec.teaser, "words": words,
-                       "music": str(track) if track else None, "music_seek": seek, "music_delay": delay,
-                       "music_mood": copy.get("music_mood"), "voice": str(voice_wav) if voice_wav else None,
-                       "ig_sound_planned": ig_sound}
-        (folder / "meta.json").write_text(json.dumps(
-            {"id": clip_id, "source": str(path), "moment": m.to_dict(), "copy": copy, "render": render_meta},
-            indent=2, ensure_ascii=False), encoding="utf-8")
-        status = "ready" if rv.get("require_approval") else "queued"
-        db.add_clip(id=clip_id, source=str(path), game=game, series_no=n, start=m.start, end=m.end,
-                    peak=m.peak, score=m.score, quality=copy["quality"], status=status,
-                    file=str(folder / "reel.mp4"), copy_json=copy, render_json=render_meta,
-                    ig_status="pending")
-        extras = [result.get("style", "classic"), f"look: {look.name}"]
-        if ig_sound:
-            extras.append("Instagram sound at posting")
-        if track:
-            extras.append(f"music: {copy.get('music_mood')}/{Path(track).name}")
-        if voice_wav:
-            extras.append("voiceover")
-        log(f"  🎬 {clip_id}: \"{copy['hook_text']}\" (hook {copy.get('hook_score')}, "
-            f"{result['duration']:.0f}s{', ' + ', '.join(extras) if extras else ''}, "
-            f"rendered in {time.time() - t0:.0f}s) → {status}", cfg)
-        made.append(clip_id)
+            picks = clean[:6 if comp == "montage" else 3]
+            best_m, best_copy, _ = picks[0]
+            name = profile.get("name", "Gaming")
+            n = len(picks)
+            if comp == "top3":
+                brief = ("This reel is a TOP 3 COUNTDOWN of the 3 best moments of the session (#3, #2, #1); the stills "
+                         "show the #1 moment. Write the hooks and the caption for the countdown as a whole, and ask "
+                         "which of the three wins.")
+                tmpl_hooks = [f"TOP 3 {name.upper()} MOMENTS", "3 CLIPS, 1 WINNER", "RANKING MY BEST 3 CLIPS"]
+                tmpl_cap = f"Top 3 {name} moments from one session. Which one takes it: 1, 2 or 3?"
+                card = "Which one wins?"
+            else:
+                brief = (f"This reel is a fast MONTAGE of the {n} best moments of the session; the stills show the best "
+                         f"one. Write the hooks and the caption for the montage as a whole.")
+                tmpl_hooks = [f"{name.upper()} BEST BITS", "ONE SESSION, ALL THE CHAOS", "BEST OF TODAY"]
+                tmpl_cap = f"{name} best bits from one session. Send this to the friend you'd run it back with."
+                card = ""
+            if cfg.ai_available:
+                copy = captions.write_copy(cfg, path, best_m, profile, "", db.peek_series(game), brief=brief)
+            else:
+                copy = captions._finish({**best_copy, "hook_options": tmpl_hooks, "instagram_caption": tmpl_cap}, profile)
+            copy["quality"] = max(copy.get("quality", 0), best_copy.get("quality", 0))
+            copy["end_card"] = copy.get("end_card") or card
+            extra = [x[0].to_dict() for x in picks]
+            clip_id = _produce(cfg, db, path, info, profile, game, best_m, copy, [], comp,
+                               "plenty of strong moments in this recording", extra, ctx)
+            if clip_id:
+                made.append(clip_id)
+        except Exception as e:
+            log(f"  ! {comp} compilation failed ({e}); the single reels are unaffected", cfg)
 
     db.mark_source(path, "done", f"{len(made)} clips")
     if not made:
@@ -199,6 +157,101 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
         path.unlink(missing_ok=True)      # reels are made; free the disk (hook re-renders need the original)
         log(f"  🧹 deleted original {path.name}", cfg)
     return made
+
+
+def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: dict, words: list,
+             style: str, why: str, extra_moments: list, ctx: dict) -> str | None:
+    """Edit, save and queue one reel. Returns its id."""
+    c, rv = cfg["clips"], cfg["review"]
+    mcfg, vcfg = cfg.get("music", {}) or {}, cfg.get("voiceover", {}) or {}
+    n = db.next_series(game)
+    clip_id = f"{game}-{n:04d}"
+    folder = cfg.output / "clips" / clip_id
+    folder.mkdir(parents=True, exist_ok=True)
+    compilation = style in editor.COMPILATIONS
+    teaser = bool(c.get("teaser_hook", True)) and not copy.get("graphic_violence")
+
+    # voiceover: when there's no commentary and no music (auto), or always. Not on compilations.
+    ig_sound = bool((cfg.get("instagram") or {}).get("trending_audio", True) and cfg.ig_user_id and cfg.ig_token)
+    track = None if ig_sound else mus.pick_track(cfg, game, copy.get("music_mood"), ctx["recent_tracks"])
+    voice_wav = None
+    transcript = " ".join(w["w"] for w in words)
+    mode = vcfg.get("mode", "auto")
+    if not compilation and voiceover.wanted(cfg, transcript) and (mode == "always" or not (track or ig_sound)):
+        ready, reason = voiceover.engine_ready(cfg)
+        if not ready:
+            log(f"  (voiceover skipped: {reason})", cfg)
+        else:
+            try:
+                lines = voiceover.write_script(cfg, path, m, copy, profile)
+                vwords = voiceover.build(cfg, lines, m.end - m.start, folder / "voiceover.wav")
+                if vwords:
+                    voice_wav = folder / "voiceover.wav"
+                    words = words or vwords
+                    copy["voiceover"] = lines
+                    if vcfg.get("disclose_ai_voice", True):
+                        copy["instagram_caption"] = copy["instagram_caption"].rstrip() + "\n\nAI voiceover"
+            except Exception as e:
+                log(f"  ! voiceover failed ({e}); posting without it", cfg)
+
+    try:
+        stats = media.tone_stats(path, m.start, m.end - m.start)
+    except Exception:
+        stats = None
+    look = looks.plan(cfg, game, stats, ai_pick=copy.get("look"), impact=copy.get("impact", True) is not False,
+                      graphic=bool(copy.get("graphic_violence")))
+    card = formats.end_card(cfg, game, copy, profile, seed=clip_id) if not voice_wav else ""
+    spec = editor.RenderSpec(
+        source=path, info=info, start=m.start, end=m.end, peak=m.peak,
+        layout=profile.get("layout", "blur"), hook=copy["hook_text"], handle=cfg.get("handle", ""),
+        words=words, teaser=teaser,
+        punch=bool(c.get("punch_zoom", True)), fps=int(c["fps"]), crf=int(c["crf"]),
+        preset=c.get("preset", "veryfast"), font=c.get("font", "Anton"),
+        music_volume=float(mcfg.get("volume", 0.55)), game_volume=float(mcfg.get("game_volume", 0.6)),
+        voice=voice_wav, style=style, meme_line=str(copy.get("meme_line") or ""),
+        look=look, encoder=c.get("encoder", "auto"),
+        moments=extra_moments, freeze_line=str(copy.get("freeze_line") or ""), end_card=card,
+        cut_seconds=formats.cut_seconds(cfg, game),
+    )
+    # music: a trending Instagram sound is attached at posting time when that's on; otherwise the library
+    # track for the AI's mood, with its drop lined up on the payoff of the finished edit
+    seek, delay = (mus.alignment(track, editor.payoff_time(spec))
+                   if track and mcfg.get("sync_drop", True) else (0.0, 0.0))
+    spec.music, spec.music_seek, spec.music_delay = track, seek, delay
+    if track:
+        ctx["recent_tracks"].append(str(track))
+
+    t0 = time.time()
+    result = editor.render(spec, folder / "reel.mp4")
+    ctx["used_styles"].append(result["style"])
+    copy["edit_style"], copy["style_why"] = result["style"], (result.get("fallback") or why)
+    media.grab_frame(folder / "reel.mp4", result["cover_ms"] / 1000, folder / "cover.jpg", width=1080)
+    (folder / "instagram_caption.txt").write_text(captions.instagram_text(copy), encoding="utf-8")
+    render_meta = {**result, "layout": spec.layout, "teaser": spec.teaser, "words": words,
+                   "music": str(track) if track else None, "music_seek": seek, "music_delay": delay,
+                   "music_mood": copy.get("music_mood"), "voice": str(voice_wav) if voice_wav else None,
+                   "ig_sound_planned": ig_sound, "moments": extra_moments, "end_card_text": card}
+    (folder / "meta.json").write_text(json.dumps(
+        {"id": clip_id, "source": str(path), "moment": m.to_dict(), "copy": copy, "render": render_meta},
+        indent=2, ensure_ascii=False), encoding="utf-8")
+    status = "ready" if rv.get("require_approval") else "queued"
+    db.add_clip(id=clip_id, source=str(path), game=game, series_no=n, start=m.start, end=m.end,
+                peak=m.peak, score=m.score, quality=copy["quality"], status=status,
+                file=str(folder / "reel.mp4"), copy_json=copy, render_json=render_meta,
+                ig_status="pending")
+    kind = formats.FORMATS.get(result["style"], {}).get("name", result["style"])
+    extras = [f"{kind} ({copy['style_why']})", f"look: {look.name}"]
+    if card and result.get("end_card"):
+        extras.append(f"ends on \"{card}\"")
+    if ig_sound:
+        extras.append("Instagram sound at posting")
+    if track:
+        extras.append(f"music: {copy.get('music_mood')}/{Path(track).name}")
+    if voice_wav:
+        extras.append("voiceover")
+    log(f"  🎬 {clip_id}: \"{copy['hook_text']}\" (hook {copy.get('hook_score')}, "
+        f"{result['duration']:.0f}s, {', '.join(extras)}, rendered in {time.time() - t0:.0f}s) → {status}", cfg)
+    return clip_id
 
 
 def rerender(cfg, db: DB, clip_id: str, hook: str | None = None) -> None:
@@ -210,7 +263,7 @@ def rerender(cfg, db: DB, clip_id: str, hook: str | None = None) -> None:
     copy, rmeta = copy_of(row), render_of(row)
     if hook:
         copy["hook_text"] = hook
-        if rmeta.get("style") == "meme_bar":
+        if rmeta.get("style") in ("meme_bar", "pov"):
             copy["meme_line"] = hook
     src = Path(row["source"])
     if not src.exists():
@@ -231,6 +284,8 @@ def rerender(cfg, db: DB, clip_id: str, hook: str | None = None) -> None:
                              music_delay=float(rmeta.get("music_delay", 0)),
                              voice=Path(rmeta["voice"]) if rmeta.get("voice") else None,
                              style=rmeta.get("style", "classic"), meme_line=str(copy.get("meme_line") or ""),
+                             moments=rmeta.get("moments") or [], freeze_line=str(copy.get("freeze_line") or ""),
+                             end_card=str(rmeta.get("end_card_text") or ""),
                              look=looks.plan(cfg, row["game"], media.tone_stats(src, row["start"], row["end"] - row["start"]),
                                              ai_pick=(rmeta.get("fx") or {}).get("look") or copy.get("look"),
                                              impact=copy.get("impact", True) is not False,

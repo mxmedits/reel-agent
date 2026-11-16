@@ -21,8 +21,14 @@ clips:
   encoder: "auto"            # auto = libx264, or the iPhone/Mac hardware encoder when x264 isn't there
   font: "Anton"              # bundled reel font (works on every device); or any font installed on your PC
   delete_recordings: false   # delete the original recording once its reels are made (saves disk space)
-  style: "auto"              # auto = Claude picks per clip using this week's trends | classic | slowmo | meme_bar
-  styles: ["classic", "slowmo", "meme_bar"]   # styles auto may choose from
+  style: "auto"              # auto = the agent picks the kind of reel per clip (see below) | or fix one kind
+  styles: ["classic", "slowmo", "replay", "freeze", "meme_bar", "pov", "top3", "montage"]   # kinds auto may use
+                             # classic = payoff first + punch zoom | slowmo | replay = instant replay in slow motion
+                             # freeze = freeze-frame with a label | meme_bar = caption bar | pov = "POV: ..." box
+                             # top3 = countdown of 3 moments | montage = quick cuts (the last two need a long recording)
+  creativity: 0.2            # 0 = always the safest kind, 1 = always experiment. 0.2 tries something new 1 time in 5
+  end_cards: true            # some reels end on a question ("Rate this /10") to pull comments
+  auto_length: true          # pull the reel length toward what top reels in the niche run at (12-32 s)
   fx:                        # the "Photoshop" pass a pro editor does on every reel
     enabled: true
     look: "auto"             # auto = the AI picks per clip | vice | tactical | stadium | cinematic | night | clean | none
@@ -76,6 +82,9 @@ trends:
   hashtag_budget: 24         # Instagram allows 30 unique hashtag searches per 7 days; keep a few spare
   explore_tags_per_game: 1   # also check the strongest rising tag found on each game's top posts
   benchmark_pages: []        # optional: business/creator pages to learn from, e.g. ["somegamingpage"]
+  study_reels: true          # watch a few top reels per game: length, cut pace, on-screen text (never reposted)
+  study_per_game: 3
+  study_with_ai: 2           # how many of those the AI also describes (uses the free AI quota)
 
 engagement:                  # account management on autopilot
   reply_to_comments: true    # answer genuine comments on recent reels (ig-reply playbook)

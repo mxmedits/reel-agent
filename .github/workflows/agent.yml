@@ -1,0 +1,53 @@
+name: Reel Agent
+
+# Runs the reel agent on GitHub's free computers.
+# Every 15 minutes it checks for new clips from the app, edits them, posts when a posting time has come,
+# answers comments and refreshes what it has learned. The app can also start it right away.
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "reelagent/**"
+      - "vendor/**"
+      - "config.example.yaml"
+      - "requirements-cloud.txt"
+      - ".github/workflows/agent.yml"
+
+permissions:
+  contents: write
+  issues: write
+
+# One run at a time. A run that is waiting starts as soon as the current one ends.
+concurrency:
+  group: reel-agent
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-cloud.txt
+      - name: Install the agent's libraries
+        run: pip install -q -r requirements-cloud.txt
+      - name: Run the agent
+        run: python -m reelagent cloud
+        env:
+          REELAGENT_HOME: ${{ github.workspace }}/data
+          GH_TOKEN: ${{ github.token }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}

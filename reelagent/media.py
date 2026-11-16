@@ -1,0 +1,306 @@
+"""Thin wrappers around ffmpeg / ffprobe that work on a PC, a server and an iPhone (a-Shell).
+
+a-Shell runs ffmpeg as a built-in command, so Python's subprocess may not be able to start it.
+Every call here therefore goes through `_exec`, which tries subprocess first and falls back to
+os.system with output written to files. Nothing relies on reading binary data from a pipe.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import tempfile
+from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
+
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - numpy ships with a-Shell; tiny fallback keeps things running
+    np = None
+
+ASSETS = Path(__file__).resolve().parent / "assets"
+FONTS = ASSETS / "fonts"
+
+
+class FFmpegError(RuntimeError):
+    pass
+
+
+from .config import is_ios  # noqa: E402,F401  (re-exported)
+
+
+# ── running commands ────────────────────────────────────────────────────────
+
+_MODE = {"m": os.environ.get("REELAGENT_EXEC", "auto")}   # auto | subprocess | system
+
+
+def _system(cmd: list[str], cwd: Path | None, out_file: Path | None) -> tuple[int, str]:
+    """os.system fallback: stdout/stderr go to files (a-Shell's shell understands > and 2>)."""
+    with tempfile.TemporaryDirectory() as td:
+        err = Path(td) / "stderr.txt"
+        line = shlex.join(cmd) + (f" > {shlex.quote(str(out_file))}" if out_file else "") \
+            + f" 2> {shlex.quote(str(err))}"
+        old = os.getcwd()
+        try:
+            if cwd:
+                os.chdir(cwd)
+            rc = os.system(line)
+        finally:
+            os.chdir(old)
+        if rc and hasattr(os, "waitstatus_to_exitcode"):
+            try:
+                rc = os.waitstatus_to_exitcode(rc)
+            except ValueError:
+                pass
+        text = err.read_text("utf-8", "replace") if err.exists() else ""
+    return rc, text
+
+
+def _exec(cmd: list[str], cwd: Path | None = None, out_file: Path | None = None) -> tuple[int, str]:
+    """Run a command. Returns (returncode, stderr text). stdout goes to out_file if given."""
+    if _MODE["m"] != "system":
+        try:
+            if out_file:
+                with open(out_file, "wb") as fh:
+                    proc = subprocess.run(cmd, cwd=str(cwd) if cwd else None, stdout=fh, stderr=subprocess.PIPE)
+            else:
+                proc = subprocess.run(cmd, cwd=str(cwd) if cwd else None,
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            _MODE["m"] = "subprocess"
+            return proc.returncode, proc.stderr.decode("utf-8", "replace")
+        except (OSError, NotImplementedError, RuntimeError) as e:
+            if _MODE["m"] == "subprocess" and not isinstance(e, FileNotFoundError):
+                raise
+            _MODE["m"] = "system"           # iPhone: ffmpeg is a shell built-in, not a file on PATH
+    return _system(cmd, cwd, out_file)
+
+
+def run(cmd: list[str], cwd: Path | None = None, out_file: Path | None = None) -> str:
+    """Run ffmpeg/ffprobe, raise FFmpegError with the tail of stderr on failure. Returns stderr."""
+    rc, err = _exec(cmd, cwd, out_file)
+    if rc != 0:
+        raise FFmpegError(f"Command failed: {' '.join(cmd[:6])} ...\n{err[-2500:]}")
+    return err
+
+
+def capture(cmd: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
+    """Run and return (rc, stdout text, stderr text) via a temp file."""
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td) / "stdout.txt"
+        rc, err = _exec(cmd, cwd, out)
+        text = out.read_text("utf-8", "replace") if out.exists() else ""
+    return rc, text, err
+
+
+@lru_cache(maxsize=None)
+def tool_ok(name: str) -> bool:
+    if shutil.which(name):
+        return True
+    try:
+        rc, out, err = capture([name, "-hide_banner", "-version"])
+    except Exception:
+        return False
+    return rc == 0 and ("version" in (out + err).lower())
+
+
+def require_ffmpeg() -> None:
+    if not tool_ok("ffmpeg"):
+        raise FFmpegError(
+            "ffmpeg not found. Install FFmpeg first:\n"
+            "  iPhone (a-Shell): pkg install ffmpeg\n"
+            "  Windows: winget install Gyan.FFmpeg\n"
+            "  macOS:   brew install ffmpeg\n"
+            "  Linux:   sudo apt install ffmpeg"
+        )
+
+
+@lru_cache(maxsize=None)
+def ffmpeg_major() -> int:
+    rc, out, err = capture(["ffmpeg", "-hide_banner", "-version"])
+    m = re.search(r"ffmpeg version n?(\d+)", out + err)
+    return int(m.group(1)) if m else 6
+
+
+def graph_args(graph: str, workdir: Path, name: str = "graph.txt") -> list[str]:
+    """Pass a filter graph through a file so no shell ever has to quote it."""
+    f = workdir / name
+    f.write_text(graph, encoding="utf-8")
+    if ffmpeg_major() >= 7:
+        return ["-/filter_complex", f.name]
+    return ["-filter_complex_script", f.name]
+
+
+@lru_cache(maxsize=None)
+def video_encoder(preferred: str = "auto") -> str:
+    """libx264 where it exists, Apple's hardware encoder on iPhone/Mac, else whatever H.264 there is."""
+    order = ["libx264", "h264_videotoolbox", "libopenh264", "h264_mediacodec", "mpeg4"]
+    if preferred and preferred != "auto":
+        order.insert(0, preferred)
+    with tempfile.TemporaryDirectory() as td:
+        for enc in order:
+            rc, _ = _exec(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=128x128:d=0.2",
+                           "-frames:v", "3", "-c:v", enc, "-pix_fmt", "yuv420p", "t.mp4"], cwd=Path(td))
+            if rc == 0:
+                return enc
+    return "libx264"
+
+
+def encode_args(crf: int = 20, preset: str = "veryfast", encoder: str = "auto") -> list[str]:
+    enc = video_encoder(encoder)
+    if enc == "libx264":
+        return ["-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-profile:v", "high"]
+    if enc == "h264_videotoolbox":     # hardware: fast and cool on iPhone; bitrate-driven
+        return ["-c:v", "h264_videotoolbox", "-b:v", "9M", "-maxrate", "12M", "-profile:v", "high",
+                "-allow_sw", "1"]
+    if enc == "libopenh264":
+        return ["-c:v", "libopenh264", "-b:v", "9M"]
+    if enc == "mpeg4":
+        return ["-c:v", "mpeg4", "-q:v", "3"]
+    return ["-c:v", enc, "-b:v", "9M"]
+
+
+@lru_cache(maxsize=None)
+def has_filter(name: str) -> bool:
+    try:
+        rc, out, err = capture(["ffmpeg", "-hide_banner", "-filters"])
+    except Exception:
+        return False
+    return any(line.split()[1:2] == [name] for line in (out + err).splitlines() if len(line.split()) > 1)
+
+
+# ── probing ─────────────────────────────────────────────────────────────────
+
+@dataclass
+class VideoInfo:
+    path: Path
+    duration: float
+    width: int
+    height: int
+    fps: float
+    has_audio: bool
+
+
+def _probe_ffprobe(path: Path) -> VideoInfo:
+    rc, out, err = capture(["ffprobe", "-v", "error", "-print_format", "json", "-show_format",
+                            "-show_streams", str(path)])
+    if rc != 0:
+        raise FFmpegError(err[-1500:] or f"ffprobe failed on {path}")
+    data = json.loads(out)
+    v = next((s for s in data["streams"] if s.get("codec_type") == "video"), None)
+    if v is None:
+        raise FFmpegError(f"No video stream in {path}")
+    has_audio = any(s.get("codec_type") == "audio" for s in data["streams"])
+    dur = float(data["format"].get("duration") or v.get("duration") or 0)
+    num, den = (v.get("avg_frame_rate") or "30/1").split("/")
+    fps = float(num) / float(den) if float(den) else 30.0
+    w, h = int(v["width"]), int(v["height"])
+    rot = 0
+    for sd in v.get("side_data_list", []) or []:
+        if "rotation" in sd:
+            rot = abs(int(sd["rotation"]))
+    if rot in (90, 270):
+        w, h = h, w
+    return VideoInfo(path, dur, w, h, fps, has_audio)
+
+
+def _probe_ffmpeg(path: Path) -> VideoInfo:
+    """No ffprobe (some iPhone builds): read `ffmpeg -i` output instead."""
+    rc, err = _exec(["ffmpeg", "-hide_banner", "-i", str(path)])
+    m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", err)
+    if not m:
+        raise FFmpegError(f"Can't read {path.name}:\n{err[-800:]}")
+    dur = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    vline = next((l for l in err.splitlines() if "Video:" in l), "")
+    sz = re.search(r"\b(\d{2,5})x(\d{2,5})\b", vline)
+    if not sz:
+        raise FFmpegError(f"No video stream in {path}")
+    w, h = int(sz.group(1)), int(sz.group(2))
+    fr = re.search(r"([\d.]+)\s*fps", vline)
+    fps = float(fr.group(1)) if fr else 30.0
+    rot = re.search(r"rotation of\s*(-?[\d.]+)|rotate\s*:\s*(-?\d+)", err)
+    if rot and abs(int(float(rot.group(1) or rot.group(2)))) in (90, 270):
+        w, h = h, w
+    return VideoInfo(path, dur, w, h, fps, "Audio:" in err)
+
+
+def probe(path: Path) -> VideoInfo:
+    path = Path(path)
+    if tool_ok("ffprobe"):
+        try:
+            return _probe_ffprobe(path)
+        except (FFmpegError, ValueError, KeyError):
+            pass
+    return _probe_ffmpeg(path)
+
+
+# ── analysis (file-based, no pipes) ─────────────────────────────────────────
+
+def audio_rms(path: Path, window: float = 0.5, sr: int = 8000):
+    """RMS loudness (dB) per `window` seconds. Empty array if no audio."""
+    with tempfile.TemporaryDirectory() as td:
+        raw = Path(td) / "a.raw"
+        rc, _ = _exec(["ffmpeg", "-y", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", str(sr),
+                       "-f", "s16le", str(raw)])
+        data = raw.read_bytes() if raw.exists() else b""
+    pcm = np.frombuffer(data[: len(data) // 2 * 2], dtype=np.int16).astype(np.float32) / 32768.0
+    hop = int(sr * window)
+    n = len(pcm) // hop
+    if n == 0:
+        return np.zeros(0, dtype=np.float32)
+    frames = pcm[: n * hop].reshape(n, hop)
+    rms = np.sqrt(np.mean(frames**2, axis=1) + 1e-10)
+    return (20 * np.log10(rms)).astype(np.float32)
+
+
+def _gray_frames(path: Path, fps: float, w: int, h: int, start: float | None = None, dur: float | None = None):
+    with tempfile.TemporaryDirectory() as td:
+        raw = Path(td) / "v.raw"
+        cmd = ["ffmpeg", "-y", "-v", "error"]
+        if start is not None:
+            cmd += ["-ss", f"{max(0.0, start):.3f}"]
+        if dur is not None:
+            cmd += ["-t", f"{dur:.3f}"]
+        cmd += ["-i", str(path), "-an", "-vf", f"fps={fps},scale={w}:{h},format=gray", "-f", "rawvideo", str(raw)]
+        _exec(cmd)
+        buf = raw.read_bytes() if raw.exists() else b""
+    arr = np.frombuffer(buf, dtype=np.uint8)
+    n = len(arr) // (w * h)
+    return arr[: n * w * h].reshape(n, h, w) if n else arr[:0].reshape(0, h, w)
+
+
+def motion_profile(path: Path, fps: float = 2.0):
+    """Per-sample (1/fps s) motion energy and frame detail (std) from tiny grayscale frames."""
+    frames = _gray_frames(path, fps, 64, 36).astype(np.float32)
+    n = len(frames)
+    if n < 2:
+        return np.zeros(max(n, 0)), np.zeros(max(n, 0))
+    diff = np.abs(np.diff(frames, axis=0)).mean(axis=(1, 2))
+    motion = np.concatenate([[diff[0]], diff])
+    detail = frames.std(axis=(1, 2))
+    return motion, detail
+
+
+def tone_stats(path: Path, start: float, dur: float) -> dict:
+    """Brightness of a moment (like Photoshop's histogram): mean, shadows (p2) and highlights (p98), 0-255."""
+    frames = _gray_frames(path, max(1.0, 8 / max(dur, 1.0)), 96, 54, start, dur)
+    if not len(frames):
+        return {"mean": 128.0, "p2": 0.0, "p98": 255.0}
+    flat = frames.reshape(-1).astype(np.float32)
+    return {"mean": float(flat.mean()), "p2": float(np.percentile(flat, 2)), "p98": float(np.percentile(flat, 98))}
+
+
+def grab_frame(path: Path, t: float, out: Path, width: int = 640, vf_extra: str = "") -> Path:
+    vf = f"scale={width}:-2" + (f",{vf_extra}" if vf_extra else "")
+    run(["ffmpeg", "-y", "-v", "error", "-ss", f"{max(t, 0):.3f}", "-i", str(path), "-frames:v", "1",
+         "-vf", vf, "-q:v", "3", str(out)])
+    return out
+
+
+def extract_wav(path: Path, start: float, dur: float, out: Path) -> Path:
+    run(["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", str(path),
+         "-vn", "-ac", "1", "-ar", "16000", str(out)])
+    return out

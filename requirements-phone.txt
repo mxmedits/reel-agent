@@ -1,0 +1,5 @@
+# iPhone (a-Shell): pure-Python packages only. numpy and ffmpeg come with a-Shell (pkg install ffmpeg).
+# PyYAML is bundled in vendor/pyyaml, so it isn't needed here.
+requests>=2.31
+python-dotenv>=1.0
+tzdata>=2024.1

@@ -1,0 +1,152 @@
+# ─────────────────────────────────────────────────────────────
+#  Reel Agent config  — copy this file to config.yaml and edit
+# ─────────────────────────────────────────────────────────────
+
+handle: "@yourpage"          # small watermark on every reel (set "" to turn off)
+inbox: "./inbox"             # drop recordings here (subfolders gta6/ cod/ fc27/ pick the game)
+output: "./output"
+timezone: "America/Toronto"
+
+clips:
+  per_video: 3               # how many reels to cut from each recording
+  length: 24                 # seconds per reel (15-35 performs best)
+  min_gap: 25                # seconds between moments picked from the same recording
+  teaser_hook: true          # flash the payoff for ~1.5 s at the start ("wait for it" hook)
+  punch_zoom: true           # quick zoom-in on the big moment
+  subtitles: true            # burn your voice commentary in as captions (needs faster-whisper)
+  whisper_model: "small"     # tiny | base | small | medium
+  fps: 30
+  crf: 20                    # lower = better quality, bigger file
+  preset: "veryfast"         # x264 preset; "medium" = smaller files, slower
+  encoder: "auto"            # auto = libx264, or the iPhone/Mac hardware encoder when x264 isn't there
+  font: "Anton"              # bundled reel font (works on every device); or any font installed on your PC
+  delete_recordings: false   # delete the original recording once its reels are made (saves disk space)
+  style: "auto"              # auto = Claude picks per clip using this week's trends | classic | slowmo | meme_bar
+  styles: ["classic", "slowmo", "meme_bar"]   # styles auto may choose from
+  fx:                        # the "Photoshop" pass a pro editor does on every reel
+    enabled: true
+    look: "auto"             # auto = the AI picks per clip | vice | tactical | stadium | cinematic | night | clean | none
+    ai_picks_look: true      # false = always use the game's look below
+    strength: 1.0            # 0.5 subtle ... 1.5 bold
+    auto_tone: true          # auto levels + lift dark clips (like Photoshop's Auto Tone)
+    denoise: true            # cleans console-capture blocking before sharpening
+    sharpen: true
+    glow: true
+    vignette: true
+    grain: true
+    impact_shake: true       # camera shake on the payoff (hits, crashes, goals)
+    impact_flash: true       # white flash on the payoff (never on graphic clips)
+    rgb_split: true          # quick colour-split glitch on the payoff
+    cut_flash: true          # flash on the cut from the teaser into the clip
+
+music:
+  library: "./music"         # tracks you have rights to, in mood folders: hype intense epic chill funny suspense
+                             # (optional per-game folders win: music/gta6/hype/). Claude picks the mood per clip.
+  volume: 0.55               # music level
+  game_volume: 0.6           # game sound level while music plays
+  sync_drop: true            # line the song's drop up with the clip's big moment
+
+voiceover:
+  mode: "auto"               # auto = only when a clip has no commentary of yours AND no music track to use
+                             # always = on every clip (music ducks under it) | off
+  engine: "piper"            # piper (free, offline) | elevenlabs | openai  (keys go in .env)
+  voice: "en_US-ryan-high"   # piper voice name / ElevenLabs voice ID / OpenAI voice (e.g. onyx)
+  speed: 1.08
+  disclose_ai_voice: true    # adds "AI voiceover" to the caption when one is used
+
+autopilot:
+  paused: false              # true = keep making reels but stop posting and replying
+
+review:
+  require_approval: false    # false = full autopilot (default). true = reels wait for `approve` before posting
+  min_quality: 6             # Claude rates each moment 1-10; anything lower is never posted
+  skip_spoilers: true        # never post cutscenes / story endings (Rockstar takes these down)
+
+schedule:
+  post_times: ["12:30", "18:00", "21:15"]   # local times; one reel per slot
+  max_per_day: 3
+  auto_times: true           # from 100 followers on, post just before your followers are most online
+  online_followers_tz: "America/Los_Angeles"  # timezone Instagram reports follower activity in (assumed)
+
+trends:
+  enabled: true              # the AI researches what's trending for gaming Reels (web search) every day
+  refresh_hours: 24
+  instagram_scout: true      # also read Instagram itself: top posts' hashtags, captions and posting hours
+  scout_every_hours: 48
+  hashtag_budget: 24         # Instagram allows 30 unique hashtag searches per 7 days; keep a few spare
+  explore_tags_per_game: 1   # also check the strongest rising tag found on each game's top posts
+  benchmark_pages: []        # optional: business/creator pages to learn from, e.g. ["somegamingpage"]
+
+engagement:                  # account management on autopilot
+  reply_to_comments: true    # answer genuine comments on recent reels (ig-reply playbook)
+  hide_abusive: true         # hide slurs / threats / scam links
+  max_replies_per_run: 15
+  max_replies_per_day: 60
+  reply_window_days: 7
+  reply_every_minutes: 45
+  audit_every_hours: 24      # pull reel stats, rank them, learn what works (ig-audit)
+  profile_check_every_days: 30
+
+ai:
+  provider: "auto"           # auto | claude | gemini | none
+                             # auto = Claude if ANTHROPIC_API_KEY is set, else free Gemini if GEMINI_API_KEY, else none
+  model: "claude-sonnet-5-5"
+  gemini_model: "gemini-flash-lite-latest"   # free tier friendly; copy another model ID from aistudio.google.com
+  look_at_frames: true       # Claude looks at stills from the clip to write accurate captions
+
+instagram:
+  enabled: true
+  share_to_feed: true
+  api_version: "v25.0"
+  trending_audio: true       # attach a trending Instagram sound that fits each reel (Instagram Audio API)
+  audio_volume: 70           # that sound's level (0-100)
+  video_volume: 55           # game sound under it (0-100)
+  trial_reels: "smart"       # smart = less certain reels go to non-followers first and auto-share if they
+                             # perform | always | off
+
+# Game profiles. The folder name or file name decides which profile is used.
+games:
+  gta6:
+    name: "GTA 6"
+    released: "2026-11-19"   # nothing is posted before launch day (pre-release footage = takedowns)
+    match: ["gta6", "gta 6", "gta_6", "gtavi", "gta vi", "grand theft auto"]
+    layout: "blur"           # blur | zoom | crop | fit
+    look: "vice"             # colour grade when the AI doesn't pick one
+    music_mood: "hype"      # fallback when Claude doesn't pick one
+    hashtags: ["#GTA6", "#GTAVI", "#GTA", "#ViceCity", "#Gaming", "#GTA6Gameplay", "#Rockstar", "#GamingClips"]
+    hooks: ["THIS WENT SO WRONG", "WAIT FOR IT", "VICE CITY IS UNHINGED", "DID NOT EXPECT THAT", "GTA 6 IS INSANE"]
+    cta: "Follow for daily GTA 6 chaos"
+  cod:
+    name: "Call of Duty"
+    match: ["cod", "callofduty", "call of duty", "mw4", "modern warfare", "warzone", "black ops"]
+    layout: "zoom"
+    look: "tactical"
+    music_mood: "intense"      # fallback when Claude doesn't pick one
+    hashtags: ["#CallOfDuty", "#MW4", "#COD", "#Warzone", "#ModernWarfare4", "#Gaming", "#FPS", "#GamingClips"]
+    hooks: ["WATCH THE KILLFEED", "THEY NEVER SAW IT COMING", "CLUTCH OR KICK?", "WAIT FOR IT", "ONE MAG"]
+    cta: "Follow for daily COD clips"
+  fc27:
+    name: "EA Sports FC 27"
+    match: ["fc27", "fc 27", "fc_27", "eafc", "ea fc", "fifa"]
+    layout: "blur"
+    look: "stadium"
+    music_mood: "hype"      # fallback when Claude doesn't pick one
+    hashtags: ["#FC27", "#EAFC27", "#EASportsFC", "#Football", "#Gaming", "#UltimateTeam", "#Goals", "#FC27Goals"]
+    hooks: ["RATE THIS GOAL /10", "WAIT FOR THE FINISH", "NO WAY THAT WENT IN", "BEST GOAL I'VE SCORED", "WATCH THE KEEPER"]
+    cta: "Follow for daily FC 27 goals"
+  default:
+    name: "Gaming"
+    match: []
+    layout: "blur"
+    look: "cinematic"
+    music_mood: "hype"      # fallback when Claude doesn't pick one
+    hashtags: ["#Gaming", "#Gamer", "#GamingClips", "#Gameplay", "#Clips"]
+    hooks: ["WAIT FOR IT", "DID NOT EXPECT THAT", "WATCH TILL THE END"]
+    cta: "Follow for daily gaming clips"
+
+phone:                       # iPhone mode (a-Shell + Shortcuts): `python3 -m reelagent phone`
+  post_after_edit: "smart"   # smart = post the best new reel right away if it's a sensible hour, queue the rest
+                             # now = always post one right away | queue = only post at posting times
+  active_hours: ["10:00", "23:30"]   # never post outside these local hours
+  min_gap_hours: 2.5         # at least this long between two posts
+  sweep_documents: true      # also pick up videos dropped straight into a-Shell's Documents folder

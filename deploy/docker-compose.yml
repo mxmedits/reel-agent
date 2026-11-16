@@ -1,0 +1,12 @@
+# Started by the server installer. Your data (config, keys, reels, music) lives in /opt/reelagent/data.
+services:
+  agent:
+    build: ..
+    image: reelagent:latest
+    container_name: reelagent
+    restart: unless-stopped
+    network_mode: host          # dashboard listens on 127.0.0.1:8080; only Caddy (HTTPS) is public
+    environment:
+      REELAGENT_HOME: /data
+    volumes:
+      - /opt/reelagent/data:/data

@@ -1,0 +1,36 @@
+name: Reel Agent clock
+
+# GitHub's own timer often starts scheduled jobs very late or not at all. This keeps time instead:
+# it wakes the agent every 15 minutes for about five hours, then starts a fresh copy of itself.
+# Only one clock runs at a time; a new one replaces the old one.
+on:
+  schedule:
+    - cron: "13 */3 * * *"      # safety net: restarts the clock if it ever stops
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/clock.yml"]
+
+permissions:
+  actions: write
+
+concurrency:
+  group: reel-agent-clock
+  cancel-in-progress: true
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Wake the agent every 15 minutes
+        run: |
+          for i in $(seq 1 21); do
+            gh workflow run agent.yml --ref main || true
+            sleep 900
+          done
+      - name: Hand over to a fresh clock
+        run: gh workflow run clock.yml --ref main || true

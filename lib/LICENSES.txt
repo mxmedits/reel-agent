@@ -1,0 +1,3 @@
+nacl-fast.min.js: TweetNaCl.js 1.0.3, public domain (Unlicense). https://github.com/dchest/tweetnacl-js
+sealedbox.js: includes blakejs 1.2.1, MIT License, Copyright (c) DC. https://github.com/dcposch/blakejs
+Anton-Regular.ttf: Anton, SIL Open Font License 1.1, Copyright 2020 The Anton Project Authors.

@@ -8,7 +8,7 @@ from datetime import datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import captions, engagement, instagram, pipeline, profile, reach, scout, trends
+from . import captions, engagement, instagram, media, pipeline, profile, reach, scout, trends
 from .db import DB, copy_of, now_iso
 
 SLOT_WINDOW = timedelta(hours=2)   # a slot missed by more than this (server down) is skipped, not crammed in
@@ -64,6 +64,9 @@ def pick_next(cfg, db: DB):
     return sorted(rows, key=rank)[0]
 
 
+LONG_LIMIT = 40          # seconds: what Instagram lets apps post for some new professional accounts
+
+
 def approved(cfg, row) -> bool:
     """With approval switched on, only reels the owner approved may be posted."""
     if not (cfg.get("review") or {}).get("require_approval", True):
@@ -103,20 +106,35 @@ def post(cfg, db: DB, row, dry_run: bool = False, log=pipeline.log) -> bool:
                      "video_volume": 100 if voiced else video}
         trial = reach.trial_strategy(cfg, row)
 
+        # the file Instagram gets: checked against its Reels spec first (audio over 128 kbps is re-encoded)
+        dur = float(render.get("duration") or 0) or media.probe(Path(file)).duration
+        upload, changed = media.instagram_ready(Path(file), Path(file).parent)
+        if changed:
+            log(f"  fitted to Instagram's spec: {changed}", cfg)
         ladder = [(audio, trial)]               # if Instagram refuses an option, fall back without it
         if trial:
             ladder.append((audio, None))
         if audio:
             ladder.append((None, None))
-        res, used, last = None, (None, None), None
-        for a, t in ladder:
+        res, used, last, safe_tried = None, (None, None), None, False
+        i = 0
+        while i < len(ladder):
+            a, t = ladder[i]
             try:
-                res = ig.publish_reel(file, text, share_to_feed=igc.get("share_to_feed", True),
+                res = ig.publish_reel(upload, text, share_to_feed=igc.get("share_to_feed", True),
                                       thumb_offset_ms=render.get("cover_ms"), audio=a, trial=t)
                 used = (a, t)
                 break
             except instagram.IGRateLimited:
                 raise
+            except instagram.IGFileRefused as e:
+                last = e
+                if not safe_tried:              # refused the file itself: once more in the safest format
+                    safe_tried = True
+                    upload, changed = media.instagram_ready(Path(file), Path(file).parent, safe=True)
+                    log(f"  Instagram refused the file ({e}); {changed}, trying again", cfg)
+                    continue
+                i += 1
             except instagram.IGError as e:
                 last = e
                 if t:
@@ -125,7 +143,17 @@ def post(cfg, db: DB, row, dry_run: bool = False, log=pipeline.log) -> bool:
                 elif a:
                     reach.set_flag(cfg, "audio_unavailable", 1)
                     log(f"  Instagram sound refused ({e}); posting with the reel's own audio", cfg)
+                i += 1
         if res is None:
+            if isinstance(last, instagram.IGFileRefused) and dur > LONG_LIMIT:
+                reach.set_flag(cfg, "long_refused", 7)
+                raise instagram.IGFileRefused(
+                    f"[too_long] Instagram refused this {dur:.0f}-second video, even in its safest format. Instagram often "
+                    f"limits new professional accounts to about {LONG_LIMIT} seconds when an app posts for them. "
+                    "Make a shorter version, or post this one yourself from the Instagram app.")
+            if isinstance(last, instagram.IGFileRefused):
+                raise instagram.IGFileRefused(f"Instagram refused the video file twice, the second time in its safest "
+                                              f"format ({last}). It may be a problem on Instagram's side: try again later.")
             raise last or instagram.IGError("publish failed")
         if used[0] and sound:
             copy["ig_audio"] = sound
@@ -144,6 +172,8 @@ def post(cfg, db: DB, row, dry_run: bool = False, log=pipeline.log) -> bool:
         log(f"⏳ {e} — will retry next slot", cfg)
     except Exception as e:
         attempts = (row["attempts"] or 0) + 1
+        if "[too_long]" in str(e):
+            attempts = max(attempts, 3)             # retrying the same length at every slot won't help
         db.update(row["id"], attempts=attempts, error=str(e)[:500],
                   status="failed" if attempts >= 3 else row["status"])
         log(f"❌ posting {row['id']} failed ({attempts}/3): {e}", cfg)

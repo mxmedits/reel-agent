@@ -379,10 +379,11 @@ def _render_seg(spec: RenderSpec, seg: Seg, i: int, workdir: Path) -> Path:
             cmd += ["-f", "lavfi", "-t", f"{out_dur:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
             graph += ";[1:a]anull[aout]"
     cmd += media.graph_args(graph, workdir, out.stem + "_graph.txt")
-    cap = ["-maxrate", f"{spec.maxrate_k}k", "-bufsize", f"{spec.maxrate_k * 2}k"] \
-        if spec.maxrate_k and media.video_encoder(spec.encoder) == "libx264" else []
+    rate = spec.maxrate_k or 20000                   # Instagram takes 25 Mbps at most
+    cap = ["-maxrate", f"{rate}k", "-bufsize", f"{rate * 2}k", "-g", "60"] \
+        if media.video_encoder(spec.encoder) == "libx264" else []
     cmd += ["-map", "[vout]", "-map", "[aout]", *media.encode_args(spec.crf, spec.preset, spec.encoder), *cap,
-            "-r", str(spec.fps), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+            "-r", str(spec.fps), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
             "-t", f"{out_dur:.3f}", out.name]
     media.run(cmd, cwd=workdir)   # run inside workdir so the .ass / font paths need no escaping
     return out
@@ -590,7 +591,7 @@ def render(spec: RenderSpec, out_path: Path) -> dict:
                       "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[a]")
         cmd += media.graph_args(";".join(chains), wd, "mix_graph.txt")
         cmd += ["-map", "0:v", "-map", "[a]", "-c:v", "copy",
-                "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
+                "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2",
                 "-movflags", "+faststart", "-t", f"{total:.3f}", str(out_path)]
         media.run(cmd, cwd=wd)
 

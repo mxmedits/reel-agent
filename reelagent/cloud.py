@@ -344,6 +344,11 @@ def apply_commands(cfg, db, log) -> dict:
                     db.update(cid, copy_json={**copy_of(row), "editing": True})
                     result["feedback"].append((cid, {"song": pick}))
                     log(f"🎵 {cid}: you picked \"{pick.get('title', '')}\"")
+            elif kind == "shorten" and row and row["status"] in ("failed", "ready", "queued"):
+                secs = max(10, min(90, int(cmd.get("seconds") or 38)))
+                db.update(cid, copy_json={**copy_of(row), "editing": True})
+                result["feedback"].append((cid, {"shorten": secs}))
+                log(f"✂ {cid}: you asked for a {secs}-second version")
             elif kind == "mark_posted" and row and row["status"] != "posted":
                 url = str(cmd.get("url") or "").strip()
                 db.update(cid, status="posted", posted_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -541,7 +546,9 @@ def answer_notes(cfg, db, gh: GitHub, notes: list, log, events: list) -> None:
             sources[name] = dest if gh.download(name, dest) else None
         src = sources.get(name) if name else (Path(row["source"]) if Path(row["source"]).exists() else None)
         before = render_of(row).get("version", 1)
-        if isinstance(text, dict):
+        if isinstance(text, dict) and "shorten" in text:
+            reply = revise.shorten(cfg, db, cid, int(text["shorten"]), src)
+        elif isinstance(text, dict):
             reply = revise.use_song(cfg, db, cid, text["song"], src)
         else:
             log(f"💬 {cid}: \"{text[:120]}\"")
@@ -682,10 +689,30 @@ def ensure_reel(cfg, db, gh: GitHub, row) -> bool:
     return True
 
 
+def remake_missing(cfg, db, gh: GitHub, row, log) -> bool:
+    """The edited reel file is gone but the original clip is stored: edit it again, keeping the approval."""
+    from . import revise
+    from .db import copy_of, render_of
+    asset = render_of(row).get("source_asset")
+    if not asset:
+        return False
+    src = cfg.output / "sources" / asset
+    if not src.exists() and not gh.download(asset, src):
+        return False
+    log(f"🔁 {row['id']}: the edited file was gone, editing it again from your original clip")
+    approved = copy_of(row).get("approved")
+    revise.remake(cfg, db, row["id"], {}, src)
+    copy = copy_of(db.get(row["id"]))
+    copy["approved"] = approved
+    db.update(row["id"], copy_json=copy, status=row["status"])
+    store_reel(cfg, db, gh, row["id"], log)
+    return ensure_reel(cfg, db, gh, db.get(row["id"]))
+
+
 def post_one(cfg, db, gh: GitHub, row, log, events: list) -> bool:
     from . import autopilot
     from .db import copy_of
-    if not ensure_reel(cfg, db, gh, row):
+    if not ensure_reel(cfg, db, gh, row) and not remake_missing(cfg, db, gh, row, log):
         db.update(row["id"], status="failed", error="the edited reel file is missing; add the clip again")
         return False
     ok = autopilot.post(cfg, db, db.get(row["id"]))
@@ -704,7 +731,8 @@ def tidy(cfg, db, gh: GitHub) -> None:
     except Exception:
         assets = {}
     rows = db.clips()
-    alive = {r["id"] for r in rows if r["status"] in ("queued", "ready")}   # 'ready' = waiting for approval
+    # 'ready' = waiting for approval; failed reels stay until you skip them (you may retry or shorten them)
+    alive = {r["id"] for r in rows if r["status"] in ("queued", "ready", "failed")}
     from .db import render_of
     needed = {render_of(r).get("source_asset") for r in rows if r["status"] in ("queued", "ready", "failed")}
     for name in assets:
@@ -713,9 +741,6 @@ def tidy(cfg, db, gh: GitHub) -> None:
                 gh.delete(name)              # all its reels are posted or skipped: no more re-edits
             continue
         if name.endswith(".mp4") and name[:-4] not in alive:
-            failed = next((r for r in rows if r["id"] == name[:-4] and r["status"] == "failed"), None)
-            if failed and (failed["attempts"] or 0) < 3:
-                continue                       # may still be retried from the app
             gh.delete(name)
     done = [r for r in rows if r["status"] in ("posted", "rejected", "skipped")]
     for r in done:
@@ -753,6 +778,7 @@ def _clip(cfg, row, insights: dict, eta: str | None = None) -> dict:
          "song_ideas": c.get("song_ideas") or [],
          "music_baked": bool(r.get("music")), "by_owner": bool(c.get("posted_by_owner")),
          "asked": rq.label(c["owner_plan"]) if c.get("owner_plan") else "",
+         "too_long": "[too_long]" in str(row["error"] or ""),
          "download": f"https://github.com/{repo()}/releases/download/{REELS_TAG}/{row['id']}.mp4" if repo() else None}
     if r.get("format") == "full" or r.get("style") == "highlight":
         from .formats import ON_REQUEST
@@ -765,7 +791,7 @@ def _clip(cfg, row, insights: dict, eta: str | None = None) -> dict:
         if i:
             d["stats"] = {k: i[k] for k in ("views", "reach", "likes", "comments", "shares", "saved") if i[k] is not None}
     if row["error"]:
-        d["error"] = row["error"]
+        d["error"] = str(row["error"]).replace("[too_long] ", "")
     d["chat"] = (c.get("chat") or [])[-20:]
     d["editing"] = bool(c.get("editing"))
     d["approved"] = bool(c.get("approved"))
@@ -841,6 +867,7 @@ def build_status(cfg, db, account: dict | None, note: str = "") -> dict:
             "reply_to_comments": bool((cfg.get("engagement") or {}).get("reply_to_comments", True)),
             "trending_audio": bool((cfg.get("instagram") or {}).get("trending_audio", True)),
             "beats": bool((cfg.get("music") or {}).get("generate", False)),
+            "long_refused": reach.flagged(cfg, "long_refused"),
             "benchmark_pages": (cfg.get("trends") or {}).get("benchmark_pages") or [],
             "games": {k: v.get("name", k) for k, v in cfg["games"].items() if k != "default"},
             "all_styles": {k: v["name"] for k, v in FORMATS.items()},

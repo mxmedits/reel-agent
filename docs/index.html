@@ -548,6 +548,7 @@ function planSheet(files) {
       <h4>Make</h4>
       <div class="kinds">${kinds.map(([v, t, d, extra]) => `<label><input type="radio" name="kind" value="${v}" ${p.kind === v ? "checked" : ""}><b>${t}</b><span>${d}</span>${extra || ""}</label>`).join("")}</div>
       <p class="small muted" id="fullNote" style="margin-top:8px"></p>
+      ${S.status?.settings?.long_refused ? `<p class="small err" style="margin-top:6px">Instagram is refusing videos longer than about 40 seconds from the agent for your account right now (common for new professional accounts). Longer videos will need posting from the Instagram app. The agent tries again in a week.</p>` : ""}
       <h4>Sound</h4>
       <div class="chips">${radio("sound", "auto", "Agent's choice", p.sound)}${radio("sound", "game", "Game sound only", p.sound)}${radio("sound", "music", "Music only", p.sound)}${radio("sound", "both", "Game sound and music", p.sound)}</div>
       <p class="small muted" style="margin-top:6px">Music is a song from Instagram's library when Instagram offers one. When it doesn't, the reel keeps the game sound and the agent suggests songs you can add in Instagram.</p>
@@ -651,7 +652,13 @@ function reelsView() {
         <div class="stats">${c.stats ? `<span><b>${fmtN(c.stats.views ?? c.stats.reach)}</b> views</span><span><b>${fmtN(c.stats.likes)}</b> likes</span><span><b>${fmtN(c.stats.shares)}</b> sends</span>` : `<span>stats arrive within a day</span>`}</div>
         <div class="small muted">${esc(c.style_name)}${c.trial ? ", trial reel" : ""}, ${esc(when(c.posted_at))}</div></div>
       ${c.url ? `<a class="btn slim ghost" href="${esc(c.url)}" target="_blank" rel="noopener">Open</a>` : ""}</li>`).join("");
-  const bad = st.problems.map((c) => `<li><div class="body"><div class="hook">${esc(c.hook)}</div><div class="small err">${esc(c.error || "could not be posted")}</div></div>
+  const bad = st.problems.map((c) => c.too_long ? `<li style="display:block"><div class="body"><div class="hook">${esc(c.hook)}</div><div class="small err">${esc(c.error)}</div></div>
+      <div class="row" style="margin-top:10px">${S.pending[c.id] ? `<span class="small muted">${esc(S.pending[c.id])}…</span>` : `<button class="btn slim primary" data-act="shorten" data-id="${esc(c.id)}">Make a 38-second version</button>
+        ${c.download ? `<a class="btn slim ghost" href="${esc(c.download)}" target="_blank" rel="noopener">Download to post myself</a>` : ""}
+        <button class="btn slim ghost" data-act="ownPost" data-id="${esc(c.id)}">I posted it</button>
+        <button class="btn slim ghost" data-cmd="retry" data-id="${esc(c.id)}">Try again</button>
+        <button class="btn slim danger" data-cmd="skip" data-id="${esc(c.id)}">Skip</button>`}</div></li>`
+    : `<li><div class="body"><div class="hook">${esc(c.hook)}</div><div class="small err">${esc(c.error || "could not be posted")}</div></div>
       <button class="btn slim" data-cmd="retry" data-id="${esc(c.id)}">Try again</button></li>`).join("");
   const w = (st.awaiting || []).map((c) => `<button data-clip="${esc(c.id)}">
       <div class="pic">${c.cover ? `<img loading="lazy" alt="" src="${esc(rawUrl(c.cover))}">` : ""}
@@ -1032,7 +1039,13 @@ document.addEventListener("click", async (e) => {
   else if (act === "ownPost") {
     if (!confirm("Mark this reel as posted by you? The agent won't post it.")) return;
     t.disabled = true;
-    try { await sendCommand({ type: "mark_posted", id: t.dataset.id }); S.pending[t.dataset.id] = "posted"; closeSheet(); toast("Marked as posted"); poll(true); }
+    try { await sendCommand({ type: "mark_posted", id: t.dataset.id }); S.pending[t.dataset.id] = "posted"; closeSheet(); toast("Marked as posted"); render(); poll(true); }
+    catch (x) { toast(x.message); t.disabled = false; }
+  }
+  else if (act === "shorten") {
+    t.disabled = true;
+    try { await sendCommand({ type: "shorten", id: t.dataset.id, seconds: 38 }); S.pending[t.dataset.id] = "making a 38-second version";
+      toast("The agent is cutting a 38-second version. It shows under Waiting for your OK in a few minutes."); render(); poll(true); }
     catch (x) { toast(x.message); t.disabled = false; }
   }
   else if (act === "fixDone") { localStorage.setItem("ra_fix_" + t.dataset.id, "1"); profileSheet(); render(); }

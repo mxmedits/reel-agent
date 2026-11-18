@@ -391,3 +391,61 @@ def extract_wav(path: Path, start: float, dur: float, out: Path) -> Path:
     run(["ffmpeg", "-y", "-v", "error", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", str(path),
          "-vn", "-ac", "1", "-ar", "16000", str(out)])
     return out
+
+
+# ── Instagram's Reels spec ──────────────────────────────────────────────────
+IG_AUDIO_K = 128            # Meta's spec: AAC, 128 kbps, 48 kHz at most
+IG_VIDEO_MAX_K = 24000      # 25 Mbps at most; stay a little under
+
+
+def _streams(path: Path) -> dict:
+    rc, so, _ = capture(["ffprobe", "-v", "error", "-show_entries",
+                         "stream=codec_type,codec_name,profile,pix_fmt,bit_rate,sample_rate,channels,avg_frame_rate:"
+                         "format=duration,bit_rate,size", "-of", "json", str(path)])
+    import json as _json
+    d = _json.loads(so or "{}") if rc == 0 else {}
+    out = {"format": d.get("format") or {}}
+    for st in d.get("streams") or []:
+        out.setdefault(st.get("codec_type"), st)
+    return out
+
+
+def instagram_ready(src: Path, folder: Path, safe: bool = False) -> tuple[Path, str]:
+    """A copy of the reel that matches Instagram's Reels spec, and what was changed ("" = nothing).
+    Light: only the audio is re-encoded when it's over 128 kbps / 48 kHz or not AAC (seconds, video copied).
+    Safe: everything re-encoded the most conservative way (H.264 Main 4.0, 30 fps, steady bitrate, 2 s GOP),
+    for when Instagram refused the file anyway."""
+    src = Path(src)
+    st = _streams(src)
+    a, v, f = st.get("audio") or {}, st.get("video") or {}, st["format"]
+    dur = float(f.get("duration") or 0) or probe(src).duration
+    out = Path(folder) / ("reel_ig_safe.mp4" if safe else "reel_ig.mp4")
+    if safe:
+        vk = max(2500, min(6000, int(280 * 8 * 1000 / max(dur, 1)) - IG_AUDIO_K))   # under 280 MB
+        run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-map", "0:v:0", "-map", "0:a:0?",
+             "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30",
+             "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "main", "-level", "4.0", "-pix_fmt", "yuv420p",
+             "-b:v", f"{vk}k", "-maxrate", f"{int(vk * 1.3)}k", "-bufsize", f"{vk * 2}k",
+             "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+             "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
+             "-c:a", "aac", "-b:a", f"{IG_AUDIO_K}k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", str(out)])
+        return out, f"re-encoded to Instagram's safest format ({vk // 1000} Mbps, H.264 Main)"
+    fixes = []
+    vbit = int(v.get("bit_rate") or 0) // 1000
+    fps = v.get("avg_frame_rate") or "30/1"
+    try:
+        n, d = fps.split("/")
+        fps_v = float(n) / float(d or 1)
+    except (ValueError, ZeroDivisionError):
+        fps_v = 30.0
+    if v.get("codec_name") not in ("h264", "hevc") or v.get("pix_fmt") != "yuv420p" or vbit > IG_VIDEO_MAX_K \
+            or not 23 <= fps_v <= 60:
+        return instagram_ready(src, folder, safe=True)
+    if a and (a.get("codec_name") != "aac" or int(a.get("bit_rate") or 0) // 1000 > IG_AUDIO_K + 4
+              or int(a.get("sample_rate") or 48000) > 48000):
+        fixes.append(f"audio {int(a.get('bit_rate') or 0) // 1000} kbps → {IG_AUDIO_K} kbps")
+    if not fixes:
+        return src, ""
+    run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy",
+         "-c:a", "aac", "-b:a", f"{IG_AUDIO_K}k", "-ar", "48000", "-ac", "2", "-movflags", "+faststart", str(out)])
+    return out, ", ".join(fixes)

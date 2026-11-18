@@ -28,6 +28,12 @@ class IGRateLimited(IGError):
     pass
 
 
+class IGFileRefused(IGError):
+    """Instagram took the request but refused the video itself (rupload ProcessingFailedError, or the
+    container ended in ERROR)."""
+    pass
+
+
 def _check(r: requests.Response) -> dict:
     try:
         data = r.json()
@@ -39,6 +45,8 @@ def _check(r: requests.Response) -> dict:
         msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
         code = err.get("code") if isinstance(err, dict) else None
         sub = err.get("error_subcode") if isinstance(err, dict) else None
+        if isinstance(err, dict) and err.get("type") == "ProcessingFailedError":
+            raise IGFileRefused(f"Instagram refused the video file ({msg})")
         if code in (4, 9, 17, 32, 613) or sub == 2207042:
             raise IGRateLimited(f"Instagram rate limit: {msg}")
         if code == 190:
@@ -122,7 +130,9 @@ class Instagram:
             code = s.get("status_code")
             if code == "FINISHED":
                 break
-            if code in ("ERROR", "EXPIRED"):
+            if code == "ERROR":
+                raise IGFileRefused(f"Instagram could not process the video: {s.get('status', code)}")
+            if code == "EXPIRED":
                 raise IGError(f"Instagram could not process the video: {s.get('status', code)}")
             if time.time() > deadline:
                 raise IGError("Timed out waiting for Instagram to process the video")

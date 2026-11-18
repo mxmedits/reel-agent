@@ -571,3 +571,40 @@ def use_song(cfg, db: DB, clip_id: str, option: dict, src: Path | None) -> str:
             reply += " The original clip isn't stored any more, so the old music stays under it."
     add_chat(db, clip_id, "agent", reply)
     return reply
+
+
+def shorten(cfg, db: DB, clip_id: str, seconds: int, src: Path | None) -> str:
+    """A shorter version of a reel (Instagram refuses longer videos from apps for some new accounts).
+    A highlight keeps its strongest moments, trimmed around their peaks; a single stretch is re-centred."""
+    row = db.get(clip_id)
+    r = render_of(row)
+    if src is None or not Path(src).exists():
+        reply = "The original clip isn't stored any more, so I can't cut a shorter version. Add the clip again."
+        add_chat(db, clip_id, "agent", reply)
+        return reply
+    style = (r.get("overrides") or {}).get("style") or r.get("style")
+    moments = r.get("moments") or []
+    plan: dict = {}
+    if style == "highlight" and moments:
+        k = max(2, min(len(moments), int(seconds // 8)))               # about 8 s or more each
+        keep = sorted(moments, key=lambda m: m.get("score", 0), reverse=True)[:k]
+        per = seconds / k
+        new = []
+        for m in keep:
+            a, b, pk = float(m["start"]), float(m["end"]), float(m["peak"])
+            if b - a > per:
+                a = max(a, min(pk - per * 0.6, b - per))
+                b = a + per
+            new.append({**m, "start": round(a, 2), "end": round(b, 2), "peak": round(min(max(pk, a + 0.5), b - 0.5), 2)})
+        r["moments"] = sorted(new, key=lambda m: m["start"])
+        db.update(clip_id, render_json=r)
+    else:
+        plan = {"length": float(seconds)}
+    remake(cfg, db, clip_id, plan, Path(src))
+    dur = render_of(db.get(clip_id)).get("duration") or seconds
+    db.update(clip_id, error=None, attempts=0,
+              status="ready" if (cfg.get("review") or {}).get("require_approval", True) else "queued")
+    reply = (f"Made a {dur:.0f}-second version" + (f" from the {len(r['moments'])} strongest moments" if plan == {} else "")
+             + ". Approve it and the agent posts it.")
+    add_chat(db, clip_id, "agent", reply)
+    return reply

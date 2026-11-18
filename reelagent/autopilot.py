@@ -90,20 +90,17 @@ def post(cfg, db: DB, row, dry_run: bool = False, log=pipeline.log) -> bool:
     try:
         ig = instagram.from_config(cfg)
         # reach boosters: a trending Instagram sound that fits, and trial reels for less certain clips
-        sound = None
-        if igc.get("trending_audio", True) and not flagged_audio(cfg):
-            recent = [copy_of(r).get("ig_audio", {}).get("audio_id") for r in db.posted_since("1970")[-6:]]
-            try:
-                sound = reach.pick_sound(cfg, ig, copy, row["game"], [x for x in recent if x],
-                                         log=lambda m: log(m, cfg))
-            except Exception as e:
-                log(f"  (no Instagram sound: {e})", cfg)
+        # the Instagram sound chosen while editing (what the owner saw when approving); none if the reel
+        # already carries music of its own, so two songs never play at once
+        sound = copy.get("ig_audio_plan") if not flagged_audio(cfg) else None
         audio = None
         if sound:
             voiced = bool(render.get("voice"))
+            game = ((render.get("overrides") or {}).get("game_audio")) or "normal"
+            video = {"off": 0, "low": 25}.get(game, int(igc.get("video_volume", 55)))
             audio = {"audio_id": sound["audio_id"],
                      "audio_volume": 25 if voiced else int(igc.get("audio_volume", 70)),
-                     "video_volume": 100 if voiced else int(igc.get("video_volume", 55))}
+                     "video_volume": 100 if voiced else video}
         trial = reach.trial_strategy(cfg, row)
 
         ladder = [(audio, trial)]               # if Instagram refuses an option, fall back without it

@@ -206,6 +206,14 @@ def apply_overrides(look: Look, o: dict) -> Look:
     if s:
         look.glow, look.vignette = round(look.glow * s, 3), round(look.vignette * s, 3)
         look.grain = int(round(look.grain * s))
+    if o.get("quality") == "high":                     # the owner asked for a sharper, cleaner picture
+        look.sharpen = max(look.sharpen, 1.0)
+        look.grain = 0
+        extra = ["hqdn3d=4:3:8:8"]
+        if media.has_filter("cas"):
+            extra.append("cas=0.55")
+        look.source_chain = list(look.source_chain) + extra
+        look.notes.append("sharper and cleaner, as asked")
     b, c, sat = float(o.get("brightness", 0)), float(o.get("contrast", 0)), float(o.get("saturation", 0))
     if b or c or sat:
         look.source_chain = list(look.source_chain) + [

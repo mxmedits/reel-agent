@@ -54,6 +54,7 @@ music/
 output/clips/*/reel.mp4
 output/clips/*/voiceover.wav
 output/clips/*/voiceover.raw.wav
+output/clips/*/beat.wav
 output/state/voices/
 output/state/*.db-wal
 output/state/*.db-shm
@@ -327,7 +328,7 @@ def apply_commands(cfg, db, log) -> dict:
                 log(f"👍 {cid} approved in the app, posting now")
             elif kind == "feedback" and row and row["status"] != "posted" and str(cmd.get("text") or "").strip():
                 from . import revise
-                revise.add_chat(db, cid, "you", str(cmd["text"]).strip())
+                revise.add_chat(db, cid, "claude" if cmd.get("from") == "claude" else "you", str(cmd["text"]).strip())
                 db.update(cid, copy_json={**copy_of(db.get(cid)), "editing": True})
                 result["feedback"].append((cid, str(cmd["text"]).strip()))
             elif kind == "approve" and row and row["status"] in ("ready", "queued"):
@@ -631,7 +632,10 @@ def _clip(cfg, row, insights: dict, eta: str | None = None) -> dict:
          "seconds": r.get("duration"), "created": row["created_at"],
          "cover": f"{base}/cover.jpg" if (folder / "cover.jpg").exists() else None,
          "preview": f"{base}/preview.mp4" if (folder / "preview.mp4").exists() else None,
-         "sound": (c.get("ig_audio") or {}).get("title") or ("your music" if r.get("music") else
+         "ig_sound": ({k: (c.get("ig_audio") or c.get("ig_audio_plan") or {}).get(k, "") for k in ("title", "artist")}
+                      if (c.get("ig_audio") or c.get("ig_audio_plan")) else None),
+         "sound": (c.get("ig_audio") or c.get("ig_audio_plan") or {}).get("title") or
+                  ("a beat made for it" if str(r.get("music") or "").startswith("beat:") else "your music" if r.get("music") else
                                                              "voiceover" if r.get("voice") else None),
          "what": c.get("what_happens", "")}
     if eta:

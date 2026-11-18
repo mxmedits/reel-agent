@@ -60,6 +60,20 @@ New reels appear under **Waiting for your OK** in the app. Open one, watch it, t
   With the free AI key the agent understands any wording; without it, it understands short notes like the examples.
 
 The original clip is kept (as a release file) until all its reels are posted or skipped, so re-edits are possible.
+The agent's reply only lists what it really changed in the new version, and says plainly what it couldn't do.
+
+**Sound you can ask for:** remove the AI voiceover, mute or lower the game sound, add music, music from
+Instagram, a different song, music louder or quieter.
+
+## 🎵 Music on every reel
+
+- **Music from Instagram** (Settings, on by default): once Instagram is connected, the agent picks a trending
+  Instagram song that fits each reel while editing it, shows it to you before you approve, and Instagram adds
+  it when the reel is posted. The app's preview can't play Instagram's music, so it plays without it.
+- **A beat made for the reel**: when Instagram isn't connected or has nothing that fits, the agent makes its own
+  royalty-free beat in the reel's mood (hype, intense, epic, chill, funny, suspense), with the build-up under
+  the start and the drop on the big moment.
+- **Your own tracks**: files in `music/<mood>/` (tracks you have the rights to) are used before the beats.
 
 ## 📺 Filmed your TV with your phone? That's handled
 

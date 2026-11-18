@@ -591,7 +591,7 @@ function settingsView() {
         <div class="switch"><div>Pick the best posting times for me<br><span class="small muted">From when top posts go live, then from when your followers are online.</span></div><input type="checkbox" name="auto_times" ${s.auto_times ? "checked" : ""}></div>
         <div id="timesBox" ${s.auto_times ? "hidden" : ""}><div class="row">${[0, 1, 2].map((i) => `<label class="f">Time ${i + 1}<input type="time" name="t${i}" value="${esc(s.post_times[i] || "")}"></label>`).join("")}</div></div>
         <div class="switch"><div>Answer comments<br><span class="small muted">Replies to real comments, hides abusive ones.</span></div><input type="checkbox" name="reply" ${s.reply_to_comments ? "checked" : ""}></div>
-        <div class="switch"><div>Use trending Instagram sounds</div><input type="checkbox" name="audio" ${s.trending_audio ? "checked" : ""}></div>
+        <div class="switch"><div>Music from Instagram<br><span class="small muted">Picks a trending Instagram song for each reel (needs Instagram connected). Otherwise the agent makes a beat for it.</span></div><input type="checkbox" name="audio" ${s.trending_audio ? "checked" : ""}></div>
       </div>
       <button class="btn primary" style="margin-top:14px">Save changes</button>
     </form>
@@ -653,10 +653,10 @@ function openSheet(html, onMount) {
 function closeSheet(keep) { if (!keep) S.openId = null; const v = $("#sheetRoot video"); if (v && v.src.startsWith("blob:")) URL.revokeObjectURL(v.src); $("#sheetRoot").innerHTML = ""; }
 
 function chatHtml(c) {
-  const msgs = (c.chat || []).map((m) => `<div class="msg ${m.from === "you" ? "you" : "agent"}">${esc(m.text)}<small>${m.from === "you" ? "You" : "Agent"}, ${esc(ago(m.at))}</small></div>`).join("");
+  const msgs = (c.chat || []).map((m) => `<div class="msg ${m.from === "you" ? "you" : "agent"}">${esc(m.text)}<small>${m.from === "you" ? "You" : m.from === "claude" ? "Claude, fixing the agent" : "Agent"}, ${esc(ago(m.at))}</small></div>`).join("");
   const busy = c.editing || S.pending[c.id] === "re-editing";
   return `<h3 style="margin-top:20px">Tell the agent what to change</h3>
-    <p class="small muted" style="margin:4px 0 0">${c.can_reedit === false ? "Its original clip isn't stored any more, so only the caption and hashtags can change." : "For example: \"the text is too small\", \"start earlier\", \"no shake\", \"brighter\", \"use a different moment\". Say \"always\" or \"from now on\" and it applies to every reel."}</p>
+    <p class="small muted" style="margin:4px 0 0">${c.can_reedit === false ? "Its original clip isn't stored any more, so only the caption and hashtags can change." : "For example: \"mute the game sound\", \"music from Instagram\", \"different song\", \"start earlier\", \"sharper picture\", \"use a different moment\". Say \"always\" or \"from now on\" and it applies to every reel."}</p>
     ${msgs ? `<div class="chat">${msgs}</div>` : ""}
     ${busy ? `<div class="editing"><span class="spin"></span>The agent is re-editing this reel. The new version shows up here in a few minutes.</div>`
            : `<form id="noteForm" class="composer"><textarea name="t" rows="2" placeholder="What should be different?" required></textarea>
@@ -672,6 +672,9 @@ async function openClip(id) {
     <h3 style="font-size:24px;margin:4px 46px 10px 0">${esc(c.hook)}</h3>
     <div class="player" id="player">${c.cover ? `<img alt="" src="${esc(rawUrl(c.cover))}">` : ""}</div>
     <div><span class="chip k">${esc(c.game_name)}</span><span class="chip k">${esc(c.style_name || c.style)}</span>${c.look ? `<span class="chip k">${esc(c.look)} grade</span>` : ""}${c.seconds ? `<span class="chip k">${Math.round(c.seconds)} s</span>` : ""}${c.version > 1 ? `<span class="chip k">version ${c.version}</span>` : ""}${c.sound ? `<span class="chip k">${esc(c.sound)}</span>` : ""}</div>
+    <p class="small ink2" style="margin-top:8px">${c.ig_sound ? `Music: “${esc(c.ig_sound.title)}”${c.ig_sound.artist ? ` by ${esc(c.ig_sound.artist)}` : ""} from Instagram. Instagram adds it when the reel is posted, so this preview plays without it.`
+      : c.sound === "a beat made for it" ? "Music: a beat the agent made for this reel, with the drop on the big moment."
+      : c.sound === "voiceover" ? "Sound: AI voiceover over the game sound." : c.sound ? `Music: ${esc(c.sound)}.` : "Sound: game sound only."}</p>
     ${c.error ? `<p class="small err">Last try: ${esc(c.error)}</p>` : ""}
     ${waiting && !c.editing ? `<div class="panel" style="margin-top:12px"><h3>Post this reel?</h3>
         <p class="small ink2" style="margin:0 0 12px">Nothing goes to Instagram until you say so.</p>

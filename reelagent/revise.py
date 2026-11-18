@@ -14,7 +14,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import captions, editor, formats, highlights, looks, media, pipeline
+from . import beats, captions, editor, formats, highlights, looks, media, pipeline, reach, voiceover
+from . import music as mus
 from .db import DB, copy_of, render_of
 
 STYLES = list(editor.STYLES)
@@ -24,7 +25,8 @@ MOODS = ["hype", "intense", "epic", "chill", "funny", "suspense"]
 FX_SWITCHES = ["shake", "flash", "rgb_split", "cut_flash", "grain", "glow", "vignette", "sharpen", "punch_zoom", "teaser"]
 
 PLAN_PROMPT = """You are the video editor of a gaming Instagram page. The page owner watched a reel you made and \
-wrote a note. Turn the note into concrete changes to THIS reel. Change only what the note asks for.
+wrote a note. Turn the note into settings for the next version of THIS reel. Set everything the note asks for, \
+including things asked in earlier notes that the owner says still aren't done. Leave the rest null.
 
 The reel now:
 {facts}
@@ -32,34 +34,39 @@ The reel now:
 Conversation so far about this reel (oldest first):
 {chat}
 
-What you can change (use null for anything the note doesn't ask about):
-- hook: the title shown at the start (4-7 words, plain words, caps are added for you)
+Settings (null = leave as it is):
+- hook: the title shown at the start (4-7 words, plain words)
 - caption: the Instagram caption text (no hashtags in it); hashtags: list of at most 5, each starting with #
 - style: the kind of reel: {styles}
 - look: colour grade: {looks}; look_strength: 0.5 (subtle) to 1.5 (bold)
-- brightness, contrast, saturation: -1 (much less) to 1 (much more), 0 = unchanged
-- layout: blur (whole game picture, blurred background), zoom (fill more of the screen, crop the sides), \
-fit (whole picture, black bars), crop (fill the whole screen)
-- length: seconds, 10 to 45
-- shift: move the clip in time, seconds (negative = start earlier, positive = later)
-- different_moment: true if the owner wants a different part of the gameplay altogether
-- end_card: the question on the last second, "" to remove it
-- text_scale: 0.7 to 1.5 to make all on-screen text smaller or bigger
-- switches (true/false): shake, flash, rgb_split (effects on the big moment), cut_flash (flash on the cut), \
-grain, glow, vignette, sharpen, punch_zoom (zoom-in on the big moment), teaser (show the big moment first)
-- music_mood: {moods}
-- remember: true if the note is a general wish for EVERY future reel ("always", "never", "from now on", \
-"in general"), false if it is about this reel only
-- note_for_future: when remember is true, the wish in one short sentence for future edits
-- reply: one or two plain sentences to the owner saying exactly what you changed (or why you couldn't)
-- cannot: anything asked that none of the above can do, else empty
+- brightness, contrast, saturation: -1 (much less) to 1 (much more)
+- quality: "high" when the owner wants a sharper, clearer, better-quality picture
+- layout: blur (whole game picture on a blurred background), zoom (fill more of the screen), fit (black bars), crop (fill all)
+- length: seconds, 10 to 45; shift: seconds to move the clip (negative = start earlier)
+- different_moment: true for a different part of the gameplay
+- end_card: the question on the last second, "" to remove it; text_scale: 0.7 to 1.5 for all on-screen text
+- voiceover: false to remove the AI voice, true to add one
+- game_audio: "off" (no game sound at all), "low" or "normal"
+- music: true to add music, false for none; music_mood: {moods}; music_volume: "low", "normal" or "high"
+- music_source: "instagram" for a song from Instagram's music library, "agent" for a beat the agent makes
+- new_song: true when the owner wants a different song
+- switches true/false: shake, flash, rgb_split, cut_flash, grain, glow, vignette, sharpen, punch_zoom, teaser
+- remember: true only for wishes about EVERY future reel ("always", "never", "from now on")
+- note_for_future: that wish in one short sentence, when remember is true
+- cannot: what was asked that no setting above can do, else ""
 
-Reply ONLY with JSON:
-{{"reply": "...", "hook": null, "caption": null, "hashtags": null, "style": null, "look": null, "look_strength": null,
- "brightness": null, "contrast": null, "saturation": null, "layout": null, "length": null, "shift": null,
- "different_moment": false, "end_card": null, "text_scale": null, "shake": null, "flash": null, "rgb_split": null,
- "cut_flash": null, "grain": null, "glow": null, "vignette": null, "sharpen": null, "punch_zoom": null,
- "teaser": null, "music_mood": null, "remember": false, "note_for_future": null, "cannot": ""}}"""
+Examples:
+"remove the voiceover" -> {{"voiceover": false}}
+"no game sound, add music that fits" -> {{"game_audio": "off", "music": true}}
+"music isn't added" -> {{"music": true}}
+"pick music from instagram" -> {{"music": true, "music_source": "instagram"}}
+"I don't like this song" -> {{"music": true, "new_song": true}}
+"I can't hear the music, mute the game" -> {{"game_audio": "off", "music": true}}
+"make it look better quality" -> {{"quality": "high"}}
+"the title is too small and it starts too late" -> {{"text_scale": 1.25, "shift": -4}}
+"never use the white flash" -> {{"flash": false, "cut_flash": false, "remember": true, "note_for_future": "No white flashes."}}
+
+Reply ONLY with one JSON object containing the settings you set."""
 
 
 def _now() -> str:
@@ -85,6 +92,8 @@ def facts(row) -> str:
         f"- caption: \"{c.get('instagram_caption', '')}\"; hashtags: {' '.join(c.get('hashtags', []))}",
         f"- colour grade: {fx.get('look')}; effects on the big moment: {', '.join(fx.get('impact') or []) or 'none'}; "
         f"grain {fx.get('grain')}, glow {fx.get('glow')}, vignette {fx.get('vignette')}",
+        f"- sound: music {r.get('music') or 'none'}; AI voiceover {'yes' if r.get('voice') else 'no'}; "
+        f"game sound {o.get('game_audio') or 'normal'}",
         f"- changes the owner already asked for: {json.dumps(o) if o else 'none'}",
     ])
 
@@ -116,6 +125,19 @@ def clean_plan(d: dict) -> dict:
         p["layout"] = d["layout"]
     if d.get("music_mood") in MOODS:
         p["music_mood"] = d["music_mood"]
+    if d.get("game_audio") in ("off", "low", "normal"):
+        p["game_audio"] = d["game_audio"]
+    if d.get("music_volume") in ("low", "normal", "high"):
+        p["music_volume"] = d["music_volume"]
+    if d.get("quality") == "high":
+        p["quality"] = "high"
+    if d.get("music_source") in ("instagram", "agent"):
+        p["music_source"] = d["music_source"]
+    if d.get("new_song") is True:
+        p["new_song"] = True
+    for k in ("voiceover", "music"):
+        if isinstance(d.get(k), bool):
+            p[k] = d[k]
     for k, lo, hi in (("look_strength", 0.3, 1.6), ("brightness", -1, 1), ("contrast", -1, 1), ("saturation", -1, 1),
                       ("length", 8, 45), ("shift", -30, 30), ("text_scale", 0.6, 1.6)):
         v = _num(d.get(k), lo, hi)
@@ -134,7 +156,20 @@ def clean_plan(d: dict) -> dict:
     return p
 
 
-RULES = [   # (pattern, plan changes) for when there is no AI key
+RULES = [   # (pattern, plan changes): used without an AI key, and to catch anything the AI missed
+    (r"\b(no|remove|without|mute|drop|cut|delete|turn off|get rid of)\b[^.]*\b(game|background|original|gameplay) (voice|sound|audio|noise)", {"game_audio": "off"}),
+    (r"\b(game|background|original|gameplay) (voice|sound|audio|noise)\b[^.]*\b(off|removed?|muted?|too loud|lower)\b", {"game_audio": "off"}),
+    (r"\b(no|remove|without|drop|delete|turn off|get rid of)\b[^.]*\b(voice ?over|narrat\w*|ai voice|robot voice)\b", {"voiceover": False}),
+    (r"\b(voice ?over|narrat\w*|ai voice)\b[^.]*\b(not removed|still there|still in|remove|annoying)\b", {"voiceover": False}),
+    (r"\binstagram\b[^.]*\b(music|song|sound|audio|track)\b|\b(music|song|sound|audio|track)\b[^.]*\b(from|on|of) (instagram|insta|ig)\b", {"music": True, "music_source": "instagram"}),
+    (r"\b(different|another|other|new|change the|change) (song|music|track|sound)\b|\bdon'?t like (the|this) (song|music|track)\b", {"music": True, "new_song": True}),
+    (r"\b(can'?t|cannot|can not) hear (the )?(music|song)\b", {"music": True, "game_audio": "off"}),
+    (r"\b(add|put|use|with|need|want|include)\b[^.]*\b(music|song|beat|track|soundtrack)\b", {"music": True}),
+    (r"\b(music|song|beat)\b[^.]*\b(not added|missing|isn'?t (there|added)|is not)\b|\bno music (was|is) added\b", {"music": True}),
+    (r"\b(no|remove|without|stop)\b[^.]*\b(music|song|beat)\b", {"music": False}),
+    (r"\b(quality|sharper|sharp|blurry|blurred|hd|clearer|crisp|pixelated|low res|grainy)\b", {"quality": "high"}),
+    (r"\b(music|song|beat) (is |was |a bit |way )*(too loud|very loud|loud)\b|\b(lower|quieter|softer) (the )?(music|song)\b", {"music_volume": "low"}),
+    (r"\b(music|song|beat) (is |was |a bit |way )*(too quiet|too low|too soft|not loud)\b|\b(louder) (the )?(music|song)\b|\b(music|song) louder\b", {"music_volume": "high"}),
     (r"\b(bigger|larger|huge|can'?t read|too small)\b.*\b(text|title|font|words?)\b|\b(text|title|font)\b.*\b(bigger|larger|too small)\b", {"text_scale": 1.25}),
     (r"\b(smaller|too big|too large)\b.*\b(text|title|font)\b|\b(text|title|font)\b.*\b(smaller|too big|too large)\b", {"text_scale": 0.8}),
     (r"\b(no|remove|without|drop|get rid of)\b.*\b(shake|shaking)\b|\btoo much shake\b", {"shake": False}),
@@ -171,6 +206,8 @@ def plan_from_keywords(text: str, row) -> dict:
         if re.search(pat, t):
             for k, v in change.items():
                 plan.setdefault(k, v)
+    if plan.get("music") is True and plan.get("game_audio") is None and re.search(r"\binstead\b", t):
+        plan["game_audio"] = "low"
     if "length" in plan:                    # relative: ±25 %
         cur = float(render_of(row).get("duration") or 20)
         plan["length"] = max(8.0, min(45.0, cur * (0.75 if plan["length"] < 0 else 1.3)))
@@ -199,7 +236,14 @@ def describe(plan: dict) -> str:
              "look": lambda v: f"{v} colour grade", "layout": lambda v: f"{v} layout",
              "hook": lambda v: f"new title \"{v}\"", "caption": lambda v: "new caption",
              "hashtags": lambda v: "new hashtags", "end_card": lambda v: f"end question \"{v}\"" if v else "no end question",
-             "music_mood": lambda v: f"{v} music"}
+             "music_mood": lambda v: f"{v} music",
+             "voiceover": lambda v: "AI voiceover added" if v else "AI voiceover removed",
+             "game_audio": lambda v: {"off": "game sound removed", "low": "game sound turned down", "normal": "game sound back to normal"}[v],
+             "music": lambda v: "music added" if v else "music removed",
+             "music_volume": lambda v: f"music {'quieter' if v == 'low' else 'louder' if v == 'high' else 'at normal level'}",
+             "quality": lambda v: "sharper, cleaner picture at a higher quality setting",
+             "music_source": lambda v: "music from Instagram" if v == "instagram" else "a beat made for the reel",
+             "new_song": lambda v: "a different song"}
     for k, v in plan.items():
         if k in names:
             out.append(names[k](v))
@@ -214,17 +258,19 @@ def read_note(cfg, row, text: str) -> dict:
     chat = "\n".join(f"{m['from']}: {m['text']}" for m in (copy_of(row).get("chat") or [])[-10:]) or "(none)"
     prompt = PLAN_PROMPT.format(facts=facts(row), chat=chat, styles=", ".join(STYLES), looks=", ".join(LOOKS),
                                 moods=", ".join(MOODS))
+    kw = plan_from_keywords(text, row)
     try:
         d = captions.parse_json(captions.ask_claude(
             cfg, "You turn a video owner's notes into precise edit settings. JSON only.",
             [{"type": "text", "text": prompt + f"\n\nThe owner's new note: \"{text}\""}], 700))
         plan = clean_plan(d)
-        if not plan.get("reply"):
-            plan["reply"] = f"Done: {describe(plan)}." if describe(plan) else "I've re-made it."
-        return plan
     except Exception as e:
         pipeline.log(f"  (AI couldn't read the note: {e}; using keywords)", cfg)
-        return plan_from_keywords(text, row)
+        return kw
+    for k, v in kw.items():             # safety net: clear requests the AI left out
+        if k not in ("reply",) and k not in plan:
+            plan[k] = v
+    return plan
 
 
 # ── remembering wishes for future reels ─────────────────────────────────────
@@ -328,27 +374,85 @@ def remake(cfg, db: DB, clip_id: str, plan: dict, src: Path) -> dict:
     if style in editor.COMPILATIONS and len(moments) < editor.COMPILATIONS[style]:
         moments = [m.to_dict() for m in highlights.find_moments(src, info, 8, count=6, min_gap=6)]
     end_card = o["end_card"] if "end_card" in o else str(rmeta.get("end_card_text") or "")
+    out = Path(row["file"]) if row["file"] else cfg.output / "clips" / clip_id / "reel.mp4"
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    # sound: music (yours, or a beat made for this reel), game sound level, AI voice
+    mcfg = cfg.get("music") or {}
+    want_music = o.get("music")
+    if want_music is None:
+        want_music = bool(rmeta.get("music") or copy.get("ig_audio_plan"))
+    track, music_note = None, ""
+    ig_ready = bool(cfg.ig_user_id and cfg.ig_token)
+    source = o.get("music_source") or ("instagram" if ig_ready and (cfg.get("instagram") or {}).get("trending_audio", True)
+                                       else "agent")
+    if not want_music:
+        copy.pop("ig_audio_plan", None)
+    elif source == "instagram":
+        cur = copy.get("ig_audio_plan")
+        if cur and not plan.get("new_song"):
+            pass                                             # keep the Instagram sound already chosen
+        elif not ig_ready:
+            music_note = "no_instagram"
+        else:
+            picked = reach.plan_sound(cfg, db, copy, row["game"], [cur["audio_id"]] if cur else [])
+            if picked:
+                copy["ig_audio_plan"] = picked
+            else:
+                music_note = "no_fit"
+        if not copy.get("ig_audio_plan"):                  # Instagram can't supply one: the reel gets a beat
+            track = "beat"
+    else:
+        copy.pop("ig_audio_plan", None)
+        mood = copy.get("music_mood") or "hype"
+        track = None if plan.get("new_song") else mus.pick_track(cfg, row["game"], mood, [])
+        if track is None:
+            track = "beat"
+    game_level = {"off": 0.0, "low": 0.25, "normal": None}.get(o.get("game_audio") or "normal")
+    voice = None
+    if o.get("voiceover") is True or (o.get("voiceover") is None and rmeta.get("voice") and not want_music):
+        lines = copy.get("voiceover") or []
+        ready, _ = voiceover.engine_ready(cfg)
+        if lines and ready:
+            try:
+                if voiceover.build(cfg, lines, end - start, out.parent / "voiceover.wav"):
+                    voice = out.parent / "voiceover.wav"
+            except Exception:
+                voice = None
     spec = editor.RenderSpec(
         source=src, info=info, start=start, end=end, peak=peak,
         layout=o.get("layout") or rmeta.get("layout", "blur"), hook=copy["hook_text"], handle=cfg.get("handle", ""),
         words=[], teaser=o.get("teaser", rmeta.get("teaser", True)),
         punch=o.get("punch_zoom", bool(c.get("punch_zoom", True))),
-        fps=int(c["fps"]), crf=int(c["crf"]), preset=c.get("preset", "veryfast"), font=c.get("font", "Anton"),
-        music=Path(rmeta["music"]) if rmeta.get("music") and Path(rmeta["music"]).exists() else None,
-        music_volume=float((cfg.get("music") or {}).get("volume", 0.55)),
-        game_volume=float((cfg.get("music") or {}).get("game_volume", 0.6)),
+        fps=int(c["fps"]), crf=16 if o.get("quality") == "high" else int(c["crf"]),
+        preset="fast" if o.get("quality") == "high" else c.get("preset", "veryfast"), font=c.get("font", "Anton"),
+        music=track if isinstance(track, Path) else None,
+        music_volume={"low": 0.35, "high": 0.8}.get(o.get("music_volume"), float(mcfg.get("volume", 0.55))),
+        game_volume=float(mcfg.get("game_volume", 0.6)) if game_level is None else game_level,
+        game_volume_alone=1.0 if game_level is None else game_level,
+        voice=voice,
         style=style, meme_line=str(copy.get("meme_line") or ""), moments=moments,
         freeze_line=str(copy.get("freeze_line") or ""), end_card=end_card, look=look,
         encoder=c.get("encoder", "auto"), cut_seconds=formats.cut_seconds(cfg, row["game"]),
         text_scale=float(o.get("text_scale") or c.get("text_scale", 1.0)),
     )
-    out = Path(row["file"]) if row["file"] else cfg.output / "clips" / clip_id / "reel.mp4"
+    if track == "beat":
+        tl = editor.timeline(spec)
+        spec.music = beats.make(copy.get("music_mood") or "hype", tl["total"] + 0.5, tl["payoff"],
+                                out.parent / "beat.wav", seed=int(rmeta.get("version", 1)) + 7 + (100 if plan.get("new_song") else 0))
+    elif isinstance(track, Path) and mcfg.get("sync_drop", True):
+        spec.music_seek, spec.music_delay = mus.alignment(track, editor.payoff_time(spec))
     result = editor.render(spec, out)
     media.grab_frame(out, result["cover_ms"] / 1000, out.parent / "cover.jpg", width=1080)
     (out.parent / "instagram_caption.txt").write_text(captions.instagram_text(copy), encoding="utf-8")
     rmeta.update(result)
     rmeta.update(overrides=o, layout=spec.layout, teaser=spec.teaser, end_card_text=end_card, moments=moments,
-                 version=int(rmeta.get("version", 1)) + 1)
+                 version=int(rmeta.get("version", 1)) + 1, beat_seed=int(rmeta.get("version", 1)) + 7,
+                 music=(f"beat:{copy.get('music_mood') or 'hype'}" if track == "beat" else str(track) if track else None),
+                 voice=str(voice) if voice else None)
+    result["has_music"] = bool(spec.music) or bool(copy.get("ig_audio_plan"))
+    result["has_voice"], result["game_level"] = bool(voice), game_level
+    result["ig_sound"], result["music_note"] = copy.get("ig_audio_plan"), music_note
     copy["approved"] = False                                  # a new version always needs a fresh OK
     copy["edit_style"] = result["style"]
     db.update(clip_id, copy_json=copy, render_json=rmeta, start=start, end=end, peak=peak, file=str(out),
@@ -357,14 +461,17 @@ def remake(cfg, db: DB, clip_id: str, plan: dict, src: Path) -> dict:
 
 
 def handle(cfg, db: DB, clip_id: str, text: str, src: Path | None) -> str:
-    """Read the owner's note, re-make the reel, reply in the chat. Returns the reply."""
+    """Read the owner's note, re-make the reel, reply in the chat. Returns the reply.
+    The reply is built from what was actually done to the new version, never from what was promised."""
     row = db.get(clip_id)
     plan = read_note(cfg, row, text)
     changes = {k: v for k, v in plan.items() if k not in ("reply", "cannot", "remember", "note_for_future")}
+    wait = "ready" if (cfg.get("review") or {}).get("require_approval", True) else "queued"
     if plan.get("remember"):
         remember(cfg, plan)
     if not changes:
-        reply = plan.get("reply") or "I couldn't tell what to change. Could you say it another way?"
+        reply = plan.get("reply") if not cfg.ai_available and plan.get("reply") else \
+            "I couldn't work out what to change from that. Could you say it another way, for example \"remove the voiceover\" or \"start earlier\"?"
     elif not (set(changes) - {"caption", "hashtags"}):                  # words only: no need to re-edit the video
         copy = copy_of(row)
         if "caption" in changes:
@@ -372,19 +479,45 @@ def handle(cfg, db: DB, clip_id: str, text: str, src: Path | None) -> str:
         if "hashtags" in changes:
             copy["hashtags"] = changes["hashtags"]
         copy["approved"] = False
-        db.update(clip_id, copy_json=copy, status="ready" if (cfg.get("review") or {}).get("require_approval", True) else "queued")
-        reply = plan.get("reply") or "Updated the caption."
+        db.update(clip_id, copy_json=copy, status=wait)
+        reply = f"Done: {describe(changes)}."
     elif src is None or not Path(src).exists():
         reply = ("I can't re-edit this one: its original clip is no longer stored. "
                  "Add the gameplay again and I'll make it with your notes.")
     else:
         try:
-            remake(cfg, db, clip_id, plan, Path(src))
-            reply = plan.get("reply") or f"Done: {describe(changes)}."
+            res = remake(cfg, db, clip_id, plan, Path(src))
+            done, missed = [], []
+            for k, v in changes.items():
+                if k == "music" and v and not res.get("has_music"):
+                    missed.append("music (no track could be made)")
+                elif k == "voiceover" and v and not res.get("has_voice"):
+                    missed.append("an AI voiceover (the voice engine isn't available)")
+                else:
+                    done.append(k)
+            for k in ("music_source", "new_song"):
+                if k in done and res.get("music_note"):
+                    done.remove(k)
+            said = describe({k: changes[k] for k in done if k != "music_source"})
+            reply = f"New version ready: {said}." if said else "New version ready."
+            if missed:
+                reply += " I couldn't add " + " and ".join(missed) + "."
+            ig = res.get("ig_sound")
+            if ig and (changes.get("music") or changes.get("music_source") or changes.get("new_song")):
+                reply += (f" Music: \"{ig.get('title', '')}\"" + (f" by {ig['artist']}" if ig.get("artist") else "")
+                          + " from Instagram. Instagram adds it when the reel is posted, so the preview here plays "
+                            "without it.")
+            elif res.get("music_note") == "no_instagram":
+                reply += (" I can't take music from Instagram until Instagram is connected (Settings, Connect "
+                          "Instagram), so for now it has a beat I made for it, with the drop on the big moment.")
+            elif res.get("music_note") == "no_fit":
+                reply += " Instagram had no sound that fits this clip right now, so it has a beat I made for it."
+            elif changes.get("music") and res.get("has_music"):
+                reply += " The music is a beat I made for this reel, with the drop on the big moment."
         except Exception as e:
-            reply = f"I tried, but the re-edit failed: {str(e)[-200:]}"
+            reply = f"The re-edit failed, so the reel is unchanged: {str(e)[-200:]}"
     if plan.get("cannot"):
-        reply += f" I can't do this part yet: {plan['cannot']}"
+        reply += f" Not possible yet: {plan['cannot']}"
     if plan.get("remember"):
         reply += " I'll do this on every reel from now on."
     add_chat(db, clip_id, "agent", reply.strip())

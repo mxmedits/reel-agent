@@ -7,7 +7,7 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-from . import captions, editor, formats, highlights, looks, media, scout, screen, transcribe, voiceover
+from . import beats, captions, editor, formats, highlights, looks, media, reach, scout, screen, transcribe, voiceover
 from . import music as mus
 from .db import DB, copy_of
 
@@ -194,12 +194,18 @@ def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: d
     teaser = bool(c.get("teaser_hook", True)) and not copy.get("graphic_violence")
 
     # voiceover: when there's no commentary and no music (auto), or always. Not on compilations.
-    ig_sound = bool((cfg.get("instagram") or {}).get("trending_audio", True) and cfg.ig_user_id and cfg.ig_token)
+    ig_plan = reach.plan_sound(cfg, db, copy, game, ctx.setdefault("ig_sounds", []), log=lambda m: log(m, cfg))
+    if ig_plan:
+        copy["ig_audio_plan"] = ig_plan
+        ctx["ig_sounds"].append(ig_plan["audio_id"])
+    ig_sound = bool(ig_plan)
     track = None if ig_sound else mus.pick_track(cfg, game, copy.get("music_mood"), ctx["recent_tracks"])
+    # no track of yours and no Instagram sound: the agent makes a beat for this reel (drop on the payoff)
+    make_beat = not ig_sound and track is None and mcfg.get("generate", True)
     voice_wav = None
     transcript = " ".join(w["w"] for w in words)
     mode = vcfg.get("mode", "auto")
-    if not compilation and voiceover.wanted(cfg, transcript) and (mode == "always" or not (track or ig_sound)):
+    if not compilation and voiceover.wanted(cfg, transcript) and (mode == "always" or not (track or ig_sound or make_beat)):
         ready, reason = voiceover.engine_ready(cfg)
         if not ready:
             log(f"  (voiceover skipped: {reason})", cfg)
@@ -250,6 +256,12 @@ def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: d
     spec.music, spec.music_seek, spec.music_delay = track, seek, delay
     if track:
         ctx["recent_tracks"].append(str(track))
+    beat_note = ""
+    if make_beat:
+        plan_ = editor.timeline(spec)
+        mood = copy.get("music_mood") or profile.get("music_mood", "hype")
+        spec.music = beats.make(mood, plan_["total"] + 0.5, plan_["payoff"], folder / "beat.wav", seed=n)
+        beat_note = f"beat:{mood}"
 
     t0 = time.time()
     result = editor.render(spec, folder / "reel.mp4")
@@ -258,7 +270,7 @@ def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: d
     media.grab_frame(folder / "reel.mp4", result["cover_ms"] / 1000, folder / "cover.jpg", width=1080)
     (folder / "instagram_caption.txt").write_text(captions.instagram_text(copy), encoding="utf-8")
     render_meta = {**result, "layout": spec.layout, "teaser": spec.teaser, "words": words,
-                   "music": str(track) if track else None, "music_seek": seek, "music_delay": delay,
+                   "music": str(track) if track else (beat_note or None), "music_seek": seek, "music_delay": delay,
                    "music_mood": copy.get("music_mood"), "voice": str(voice_wav) if voice_wav else None,
                    "ig_sound_planned": ig_sound, "moments": extra_moments, "end_card_text": card}
     (folder / "meta.json").write_text(json.dumps(
@@ -274,9 +286,11 @@ def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: d
     if card and result.get("end_card"):
         extras.append(f"ends on \"{card}\"")
     if ig_sound:
-        extras.append("Instagram sound at posting")
+        extras.append(f"Instagram sound \"{ig_plan.get('title', '')}\" (added when posted)")
     if track:
         extras.append(f"music: {copy.get('music_mood')}/{Path(track).name}")
+    elif beat_note:
+        extras.append(f"{beat_note.split(':')[1]} beat made for it")
     if voice_wav:
         extras.append("voiceover")
     log(f"  🎬 {clip_id}: \"{copy['hook_text']}\" (hook {copy.get('hook_score')}, "

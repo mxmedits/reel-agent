@@ -68,6 +68,7 @@ class RenderSpec:
     end_card: str = ""                 # question shown on the dimmed last second ("RATE THIS /10")
     cut_seconds: float = 2.0           # montage cut length (learned from top reels)
     text_scale: float = 1.0            # all on-screen text bigger (>1) or smaller (<1)
+    game_volume_alone: float = 1.0     # game sound level when there is no music (0 = muted)
 
 
 STYLES = ("classic", "slowmo", "meme_bar", "pov", "replay", "freeze", "top3", "montage")
@@ -548,7 +549,7 @@ def render(spec: RenderSpec, out_path: Path) -> dict:
         total = plan["total"]
         fmt = "aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo"
         cmd = ["ffmpeg", "-y", "-v", "error", "-i", str(joined)]
-        chains = [f"[0:a]{fmt},volume={spec.game_volume if spec.music else 1.0}[g0]"]
+        chains = [f"[0:a]{fmt},volume={spec.game_volume if spec.music else spec.game_volume_alone}[g0]"]
         bed, idx = "[g0]", 1
         if spec.music:
             cmd += ["-stream_loop", "-1", "-ss", f"{spec.music_seek:.2f}", "-i", str(spec.music)]

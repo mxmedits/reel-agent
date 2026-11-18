@@ -60,6 +60,23 @@ def _cached_trending(cfg, ig) -> list[dict]:
     return items
 
 
+def plan_sound(cfg, db, copy: dict, game: str, exclude: list[str] | None = None, log=print) -> dict | None:
+    """Choose the Instagram sound for a reel while it's being edited, so the owner sees it before approving.
+    None when Instagram isn't connected, sounds are switched off, or nothing fits."""
+    from . import instagram
+    from .db import copy_of
+    igc = cfg.get("instagram") or {}
+    if not (igc.get("trending_audio", True) and cfg.ig_user_id and cfg.ig_token) or flagged(cfg, "audio_unavailable"):
+        return None
+    recent = [(copy_of(r).get("ig_audio") or copy_of(r).get("ig_audio_plan") or {}).get("audio_id")
+              for r in db.clips()[-8:]]
+    try:
+        return pick_sound(cfg, instagram.from_config(cfg), copy, game, [x for x in recent + list(exclude or []) if x], log=log)
+    except Exception as e:
+        log(f"  (no Instagram sound: {e})")
+        return None
+
+
 def pick_sound(cfg, ig, copy: dict, game: str, recent_ids: list[str], log=print) -> dict | None:
     cands, seen = [], set(recent_ids)
 

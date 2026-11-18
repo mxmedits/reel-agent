@@ -108,7 +108,7 @@ def _gemini(cfg, system, content, max_tokens, search):
         b = dict(body)
         if use_search:
             b["tools"] = [{"google_search": {}}]
-        for retry in range(2):
+        for retry in range(3):
             with _gem_lock:
                 wait = GEMINI_MIN_GAP - (time.time() - _gem_last[0])
                 if wait > 0:
@@ -117,6 +117,9 @@ def _gemini(cfg, system, content, max_tokens, search):
             r = requests.post(url, json=b, timeout=120, headers={"x-goog-api-key": key})
             if r.status_code == 429 and retry == 0 and "per day" not in r.text.lower():
                 time.sleep(35)                 # per-minute limit: wait it out once
+                continue
+            if r.status_code in (500, 502, 503, 504) and retry < 2:
+                time.sleep(8 * (retry + 1))    # "high demand" spikes pass within seconds
                 continue
             break
         if r.status_code == 200:

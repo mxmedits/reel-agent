@@ -337,6 +337,10 @@ def apply_commands(cfg, db, log) -> dict:
             elif kind == "skip" and row and row["status"] != "posted":
                 db.update(cid, status="rejected")
                 log(f"⏭ {cid} skipped from the app")
+            elif kind == "profile":
+                from . import profile
+                profile.flag(cfg).write_text("1", encoding="utf-8")
+                log("🪪 the app asked for a fresh profile check")
             elif kind == "retry" and row and row["status"] == "failed":
                 db.update(cid, status="queued", attempts=0, error=None)
             elif kind == "caption" and row and row["status"] != "posted":
@@ -656,7 +660,7 @@ def _clip(cfg, row, insights: dict, eta: str | None = None) -> dict:
 
 
 def build_status(cfg, db, account: dict | None, note: str = "") -> dict:
-    from . import ai, autopilot, phone, reach, scout, trends
+    from . import ai, autopilot, phone, profile, reach, scout, trends
     from .formats import FORMATS, allowed
     insights = {r["clip_id"]: r for r in db.conn.execute("SELECT * FROM insights").fetchall()}
     rows = db.clips()
@@ -746,6 +750,7 @@ def build_status(cfg, db, account: dict | None, note: str = "") -> dict:
             "page": {"reels": learned.get("n"), "confidence": learned.get("confidence"),
                      "by_kind": learned.get("style_weights") or {}} if learned else None,
         },
+        "profile": profile.for_status(cfg),
         "log": log_tail,
     }
     return safety.scrub_obj(status)

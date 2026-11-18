@@ -75,6 +75,18 @@ Instagram, a different song, music louder or quieter.
   the start and the drop on the big moment.
 - **Your own tracks**: files in `music/<mood>/` (tracks you have the rights to) are used before the beats.
 
+## 🪪 Your profile, kept follow-worthy
+
+Instagram's API can read a profile but can't change one, for any app. So the agent reads yours every few hours,
+scores it out of 100 (the ig-profile rubric), and writes the fixes: three options for the name field (the line
+Instagram search matches), three bios, which reels to pin, and highlight names for later. The app shows them on
+Home under **Fix my profile**, each with a **Copy** button. Paste one in Instagram's Edit profile and tap
+**I changed it, check again**; the agent sees the change and scores it again.
+
+What the agent does on its own: edits, captions, hashtags, posting at good times, replies to comments, reading
+top posts and trends, learning from your numbers. What only you can do in the Instagram app, because Instagram
+allows no app to: the profile fields above, pinning, highlights and following other accounts.
+
 ## 📺 Filmed your TV with your phone? That's handled
 
 If a clip was filmed off a TV or monitor, the agent finds the screen, straightens it to a flat 16:9 picture,
@@ -398,7 +410,7 @@ Finished reels live in `output/clips/<id>/` (reel.mp4, cover.jpg, caption, meta.
 | ig-caption (caption.py) | caption linted: 125-char feed window, game name, one ask, 5 hashtags max; one auto-rewrite if it fails |
 | ig-reply | comment triage and replies; abusive comments hidden, noise ignored |
 | ig-audit + ig-viral (swipe.py) | daily stats → outlier multiple vs your median, sends/reach, formula naming → `learnings.json` |
-| ig-profile (rubric.json) | monthly 100-point profile score with a rewritten bio to paste (the API can't edit bios) |
+| ig-profile (rubric.json) | 100-point profile score, name field and bio rewrites to paste from the app (the API can't edit profiles); re-scored when the profile changes |
 | ig-plan | "next up" schedule section in each audit |
 | ig-repurpose | that's the core loop: one long recording → several standalone reels |
 | ig-story, ig-carousel, ig-dm, ig-comment | playbooks included; **not automated**. Carousels need publicly hosted images, DMs need Meta's Messaging API review, and commenting on other accounts isn't possible through the official API (bots that do it get accounts blocked) |

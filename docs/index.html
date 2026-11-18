@@ -185,6 +185,18 @@ code.long{white-space:normal;word-break:break-word}
 #toast{position:fixed;left:50%;bottom:calc(var(--safe-b) + 96px);transform:translateX(-50%);background:var(--ink);color:var(--bg);
   padding:11px 18px;border-radius:12px;font-weight:600;font-size:15px;z-index:20;max-width:88vw;text-align:center}
 .empty{padding:26px 6px;text-align:center;color:var(--ink2)}
+/* profile fixes: each option is a card with its own copy button */
+.score{display:flex;align-items:baseline;gap:8px}
+.score b{font-family:var(--display);font-size:40px;font-weight:400;line-height:1}
+.score span{color:var(--muted)}
+.fix{padding:16px 0;border-top:1px solid var(--line)}
+.fix:first-of-type{border-top:0}
+.fix h3 span{font-family:var(--body);font-size:13.5px;font-weight:650;margin-left:8px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;margin-top:8px;border-radius:12px;background:var(--bg)}
+.opt p{flex:1;margin:0;white-space:pre-wrap;word-break:break-word;font-size:15px}
+.opt small{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+.opt .btn{flex:none;min-height:40px;padding:6px 14px}
+.nowval{font-size:13.5px;color:var(--ink2);margin:6px 0 0;white-space:pre-wrap}
 .spin{width:18px;height:18px;border-radius:50%;border:2.5px solid currentColor;border-right-color:transparent;animation:rot .7s linear infinite;flex:none}
 @keyframes rot{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -442,6 +454,43 @@ function setupSteps(st) {
     <li class="${first ? "done" : ""}"><div><b>Add your first gameplay clip</b><br><span class="small muted">Use the yellow button above.</span></div></li>
   </ol></div>`;
 }
+const PFX = (p) => (p?.fixes || []).filter((f) => !f.done && !f.later && !f.optional && !(f.manual && localStorage.getItem("ra_fix_" + f.id)));
+function profilePanel(st) {
+  const p = st?.profile; if (!p || !st.agent.connected) return "";
+  const open = PFX(p);
+  const score = p.score != null ? `<div class="score"><b>${p.score}</b><span>/ 100</span></div>` : "";
+  if (!open.length) return `<div class="panel"><h3>Your profile</h3>${score}<p class="small ink2" style="margin-top:6px">Nothing to fix right now. The agent reads it again every few hours and tells you here if something could work harder.</p>
+      <button class="btn slim ghost" data-act="profile">See the details</button></div>`;
+  return `<div class="panel"><h3>Make your profile pull followers</h3>${score}
+    <p class="small ink2" style="margin-top:6px">${esc(p.summary || "New visitors decide in seconds whether to follow.")} The agent wrote ${open.length === 1 ? "the fix" : `${open.length} fixes`}; Instagram only lets you paste them in yourself. About a minute.</p>
+    <button class="btn primary" data-act="profile">Fix my profile</button></div>`;
+}
+function profileSheet() {
+  const p = S.status?.profile; if (!p) return;
+  S.copy = [];
+  const opt = (text, i) => { S.copy.push(text); return `<div class="opt"><p>${esc(text)}<small>${[...text].length} characters</small></p><button class="btn slim" data-act="copy" data-i="${S.copy.length - 1}">Copy</button></div>`; };
+  const fix = (f) => {
+    const done = f.done || (f.manual && localStorage.getItem("ra_fix_" + f.id));
+    const state = done ? `<span class="ok">done</span>` : f.later ? `<span class="muted small">later</span>` : f.optional ? `<span class="muted small">optional</span>` : `<span class="warn">to do</span>`;
+    const reels = (f.reels || []).map((r, i) => `<li><div class="body"><div class="hook">${i + 1}. ${esc(r.hook)}</div><div class="stats"><span><b>${fmtN(r.views)}</b> views</span><span><b>${fmtN(r.shares)}</b> shares</span></div></div>
+        ${r.link ? `<a class="btn slim ghost" href="${esc(r.link)}" target="_blank" rel="noopener">Open</a>` : ""}</li>`).join("");
+    return `<div class="fix"><h3>${esc(f.title)}${state}</h3>
+      <p class="small ink2" style="margin-top:4px">${esc(f.why)}</p>
+      ${f.options ? `<p class="nowval">Now: ${f.now ? esc(f.now) : "<i>empty</i>"}</p>${done ? "" : f.options.map(opt).join("")}` : ""}
+      ${reels ? `<ul class="list" style="margin-top:6px">${reels}</ul>` : ""}
+      ${f.manual && !done ? `<button class="btn slim ghost" style="margin-top:10px" data-act="fixDone" data-id="${esc(f.id)}">I did this</button>` : ""}</div>`;
+  };
+  const items = (p.items || []).map((i) => `<div class="meter"><span>${esc(i.label)}</span><span class="m"><b style="width:${Math.round(100 * i.got / i.of)}%"></b></span><span>${i.got}/${i.of}</span></div>${i.note ? `<p class="small muted" style="margin:-4px 0 6px">${esc(i.note)}</p>` : ""}`).join("");
+  openSheet(`<h3 style="font-size:24px;margin:4px 46px 6px 0">Your profile</h3>
+    ${p.score != null ? `<div class="score"><b>${p.score}</b><span>/ 100${p.after_score ? `, about ${p.after_score} with these fixes` : ""}</span></div>` : ""}
+    <p class="ink2" style="margin-top:8px">Instagram doesn't let any app change a profile, so the agent writes it and you paste it. Copy one option, then in Instagram tap <b>Edit profile</b> and paste it into the field.</p>
+    <a class="btn primary" href="https://www.instagram.com/${esc(p.username || S.status.agent.username)}/" target="_blank" rel="noopener">Open my profile in Instagram</a>
+    <div style="margin-top:8px">${(p.fixes || []).map(fix).join("")}</div>
+    ${(p.highlights || []).length ? `<div class="fix"><h3>Highlights<span class="muted small">later</span></h3><p class="small ink2" style="margin-top:4px">When you start posting stories, save them into a few highlights with names like these:</p><div>${p.highlights.map((h) => `<span class="chip">${esc(h)}</span>`).join("")}</div></div>` : ""}
+    ${items ? `<details style="margin-top:10px"><summary>How the score adds up</summary>${items}</details>` : ""}
+    <button class="btn" style="margin-top:14px" data-act="profileCheck">I changed it, check again</button>
+    <p class="small muted" style="margin-top:10px">${p.source === "ai" ? "Written by the AI" : "Written from the agent's templates (the AI was busy; it tries again in a few hours)"}, ${esc(ago(p.written_at))}. Checked ${esc(ago(p.read_at))}.</p>`);
+}
 function uploadPanel() {
   const u = S.upload; if (!u) return "";
   const rows = u.files.map((f) => `<div class="small" style="display:flex;justify-content:space-between;gap:10px;margin-top:6px">
@@ -482,6 +531,7 @@ function homeView() {
     </div>
     ${uploadPanel()}
     ${setupSteps(st)}
+    ${profilePanel(st)}
     ${st.note ? `<div class="panel"><h3>The last visit hit a problem</h3><pre class="log">${esc(st.note)}</pre></div>` : ""}
     ${(st.awaiting || []).length ? `<h2>Waiting for your OK</h2>
       <p class="small ink2" style="margin-top:-4px">Watch each one. Approve it, or tell the agent what to change.</p>
@@ -743,7 +793,7 @@ function igSheet() {
     <ol class="how">
       <li>In the Instagram app: <b>Settings</b>, <b>Account type and tools</b>, switch to a <b>Creator</b> account.</li>
       <li>Link the account to a Facebook Page you manage (create a Page if you have none).</li>
-      <li>Open <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">developers.facebook.com/apps</a>, tap <b>Create App</b> and choose the <b>Business</b> type.</li>
+      <li>Open <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">developers.facebook.com/apps</a>, tap <b>Create App</b>, give it a name, then under <b>Filter by</b> tap <b>Others</b>, pick <b>Other</b>, and choose the <b>Business</b> type.</li>
       <li>In the app's <b>Settings</b>, <b>Basic</b>: copy the <b>App ID</b> and the <b>App secret</b>.</li>
       <li>Open <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener">Graph API Explorer</a>, pick your app, add these permissions, then tap <b>Generate Access Token</b> and copy it:<br>
         <code class="long">instagram_basic, instagram_content_publish, instagram_manage_comments, instagram_manage_insights, pages_show_list, pages_read_engagement, business_management</code></li>
@@ -854,6 +904,18 @@ document.addEventListener("click", async (e) => {
   if (act === "closeSheet") closeSheet();
   else if (act === "aiKey" || act === "ytKey") keySheet(act);
   else if (act === "igWizard") igSheet();
+  else if (act === "profile") profileSheet();
+  else if (act === "copy") {
+    const text = (S.copy || [])[+t.dataset.i] || "";
+    try { await navigator.clipboard.writeText(text); toast("Copied. Paste it in Instagram's Edit profile."); }
+    catch (x) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Copied"); }
+  }
+  else if (act === "fixDone") { localStorage.setItem("ra_fix_" + t.dataset.id, "1"); profileSheet(); render(); }
+  else if (act === "profileCheck") {
+    t.disabled = true;
+    try { await sendCommand({ type: "profile" }); toast("The agent is reading your profile again. The new score shows here in a few minutes."); closeSheet(); poll(true); }
+    catch (x) { toast(x.message); t.disabled = false; }
+  }
   else if (act === "refresh") poll(true);
   else if (act === "clearUpload") { S.upload = null; render(); }
   else if (act === "wakeNow") { try { await wake(); toast("The agent is starting a visit"); render(); poll(true); } catch (x) { toast(x.message); } }
@@ -924,6 +986,14 @@ function demoStatus() {
         gta6: { posts: 96, tags: ["#gta6", "#vicecity", "#gta6clips", "#gtaonline", "#rockstargames"], kinds: [{ tag: "fail", share: 0.34 }, { tag: "pov", share: 0.22 }, { tag: "wait_for_it", share: 0.18 }, { tag: "ranking", share: 0.09 }], playbook: { studied: 3, median_seconds: 17, median_shot_seconds: 2.4, with_text: 1, notes: ["Opens on the crash, then rewinds to show how it started."] }, openers: ["Vice City cops said no", "Who else does this first?"] },
         cod: { posts: 88, tags: ["#callofduty", "#codclips", "#warzone", "#blackops7"], kinds: [{ tag: "clutch", share: 0.41 }, { tag: "rate", share: 0.17 }, { tag: "funny", share: 0.12 }], playbook: null, openers: ["One mag. Four down.", "Clutch or kick?"] } } },
       page: { reels: 23, confidence: "medium", by_kind: { freeze: { x: 1.7, n: 4 }, replay: { x: 1.3, n: 5 }, classic: { x: 0.9, n: 9 }, meme_bar: { x: 0.7, n: 5 } } } },
+    profile: { username: "frameperfect", current: { name: "", biography: "" }, score: 18, after_score: 54, source: "ai", written_at: new Date(Date.now() - 2 * 36e5).toISOString(), read_at: new Date(Date.now() - 30 * 6e4).toISOString(),
+      summary: "The name field and bio are empty, so a visitor from a reel can't tell what the page posts.",
+      items: [{ label: "Name field", got: 0, of: 12, note: "Empty, so search can't match the page" }, { label: "Bio, first line", got: 0, of: 12, note: "Empty" }, { label: "Category and contact", got: 6, of: 6, note: "Creator, Gamer" }],
+      highlights: ["GTA 6", "COD", "FC 27", "Best of"],
+      fixes: [{ id: "name", title: "Name field", now: "", done: false, why: "The bold line under your photo. Instagram search matches it, so it should say what the page is.", options: ["GTA 6 • COD • FC 27 Clips", "Gaming Clips | GTA 6 & COD", "Frame Perfect | GTA 6"] },
+              { id: "bio", title: "Bio", now: "", done: false, why: "A stranger arrives from one reel and decides in about three seconds.", options: ["Daily GTA 6, COD & FC 27 clips 🎮\nThe kills, fails and moments worth a replay.\nTurn on notifications so you catch the next one 🔔", "The best GTA 6 and Call of Duty moments, cut short 🎯\nRate every clip in the comments 👇"] },
+              { id: "pin", title: "Pin your best reels", done: false, manual: true, why: "Open the reel in Instagram, tap ⋯, then Pin to your profile. Up to 3.", reels: [{ hook: "TOP 3 VICE CITY MOMENTS", views: 52300, shares: 1730, link: "https://www.instagram.com/" }, { hook: "THEY NEVER SAW IT COMING", views: 18400, shares: 388, link: "https://www.instagram.com/" }] },
+              { id: "link", title: "Link", done: false, optional: true, now: "", why: "Leave it empty for now. When the YouTube channel is running, put that one link here." }] },
     log: ["[demo] nothing here is real"] };
 }
 

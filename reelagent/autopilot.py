@@ -8,7 +8,7 @@ from datetime import datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from . import captions, engagement, instagram, pipeline, reach, scout, trends
+from . import captions, engagement, instagram, pipeline, profile, reach, scout, trends
 from .db import DB, copy_of, now_iso
 
 SLOT_WINDOW = timedelta(hours=2)   # a slot missed by more than this (server down) is skipped, not crammed in
@@ -262,13 +262,12 @@ def tick(cfg, db: DB, dry_run: bool = False, log=pipeline.log, due=None, process
             log(f"! smart times: {ex}", cfg)
         db.job_done("times")
 
-    # 6. profile check (ig-profile)
-    if _every(db, "profile", float(e.get("profile_check_every_days", 30)) * 1440):
-        try:
-            engagement.profile_check(cfg, ig, log=lg)
-        except Exception as ex:
-            log(f"! profile check: {ex}", cfg)
-        db.job_done("profile")
+    # 6. the profile (ig-profile): read every few hours, scored and rewritten when new, changed or stale.
+    #    Instagram can't edit a profile through its API, so the fixes go to the app with copy buttons.
+    try:
+        profile.job(cfg, db, ig, log=lg)
+    except Exception as ex:
+        log(f"! profile check: {ex}", cfg)
 
 
 def watch(config_path=None, interval: int = 120, dry_run: bool = False) -> None:

@@ -62,7 +62,10 @@ def recent_hooks(db: DB, n: int = 12) -> list[str]:
     return [copy_of(r).get("hook_text", "") for r in db.clips()[-n:]]
 
 
-def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
+def process_file(cfg, db: DB, path: Path, game: str | None = None, plan: dict | None = None) -> list[str]:
+    """Edit one recording into reels. `plan` is what the owner asked for when adding it (request.py)."""
+    from . import request as rq
+    plan = rq.clean(plan)
     path = path.resolve()
     media.require_ffmpeg()
     info = media.probe(path)
@@ -90,11 +93,31 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
         db.mark_source(path, "skipped", "pre-release footage")
         return []
 
+    kind = plan["kind"]
+    if not rq.is_default(plan):
+        log(f"  📝 you asked for: {rq.label(plan) or rq.NAMES[kind]}" + (f"; note: \"{plan['note']}\"" if plan["note"] else ""), cfg)
+    if kind in ("highlight", "full"):
+        made = _long_form(cfg, db, path, info, profile, game, plan)
+        db.mark_source(path, "done", f"{len(made)} clips")
+        return made
+
     length = formats.reel_length(cfg, game)
-    want = int(c["per_video"])
+    want = plan["count"] if kind == "shorts" else int(c["per_video"])
+    if kind in ("top3", "montage"):
+        want = editor.COMPILATIONS[kind] + 2
     # with an AI to judge them, offer it more moments so it can turn the weak ones down
     moments = highlights.find_moments(path, info, length, count=max(want * (3 if cfg.ai_available else 2), want + 2),
                                       min_gap=float(c["min_gap"]))
+    named = []                                    # times the owner named in the note come first, and stay in
+    for t in rq.times(plan["note"]):
+        m = highlights.near(path, info, t, length)
+        if m and all(min(m.end, x.end) - max(m.start, x.start) < 0.35 * length for x in named):
+            named.append(m)
+    if named:
+        moments = named + [m for m in moments
+                           if all(min(m.end, x.end) - max(m.start, x.start) < 0.35 * length for x in named)]
+        log(f"  🎯 kept the moment{'s' if len(named) > 1 else ''} you named at "
+            + ", ".join(f"{int(x.peak // 60)}:{int(x.peak % 60):02d}" for x in named), cfg)
     log(f"  found {len(moments)} candidate moments" + (f" (reels ~{length:.0f}s, from what top reels run at)"
                                                         if abs(length - float(c["length"])) >= 1 else ""), cfg)
 
@@ -108,10 +131,13 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
                 log(f"  ! transcription failed: {e}", cfg)
         transcript = " ".join(w["w"] for w in words)
         copy = captions.write_copy(cfg, path, m, profile, transcript, db.peek_series(game) + len(candidates),
+                                   brief=rq.brief(plan),
                                    avoid=recent_hooks(db) + [x[1].get("hook_text", "") for x in candidates])
         verdict = f"quality {copy['quality']}/10"
         if copy.get("what_happens"):
             verdict += f" — {copy['what_happens']}"
+        if m in named:
+            copy["quality"] = max(copy["quality"], int(rv["min_quality"]))     # you asked for this one
         if copy["quality"] < int(rv["min_quality"]):
             log(f"  ✗ moment {i} @ {m.peak:.0f}s skipped: {verdict}", cfg)
             continue
@@ -129,13 +155,22 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
 
     # a long recording with plenty of moments also gets one compilation, in place of the weakest single reel
     clean = [x for x in candidates if not x[1].get("graphic_violence")]
-    comp = formats.compilation(cfg, db, game, len(clean), info.duration, want, seed=f"{path.name}-{len(candidates)}")
-    singles = candidates[:max(want - 1, 1)] if comp else candidates[:want]
+    if kind in ("top3", "montage"):
+        if len(clean) >= editor.COMPILATIONS[kind]:
+            comp, singles = kind, []
+        else:
+            log(f"  ! only {len(clean)} strong moment(s), not enough for {rq.NAMES[kind]}: making a single reel", cfg)
+            comp, singles = None, candidates[:1]
+    elif kind == "shorts":
+        comp, singles = None, candidates[:want]
+    else:
+        comp = formats.compilation(cfg, db, game, len(clean), info.duration, want, seed=f"{path.name}-{len(candidates)}")
+        singles = candidates[:max(want - 1, 1)] if comp else candidates[:want]
 
     for m, copy, words in singles:
         style, why = formats.choose(cfg, db, game, copy, ctx["used_styles"],
                                     seed=f"{game}-{db.peek_series(game)}-{m.peak:.1f}")
-        clip_id = _produce(cfg, db, path, info, profile, game, m, copy, words, style, why, [], ctx)
+        clip_id = _produce(cfg, db, path, info, profile, game, m, copy, words, style, why, [], ctx, plan=plan)
         if clip_id:
             made.append(clip_id)
 
@@ -166,12 +201,15 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
             copy["end_card"] = copy.get("end_card") or card
             extra = [x[0].to_dict() for x in picks]
             clip_id = _produce(cfg, db, path, info, profile, game, best_m, copy, [], comp,
-                               "plenty of strong moments in this recording", extra, ctx)
+                               "you asked for it" if kind == comp else "plenty of strong moments in this recording",
+                               extra, ctx, plan=plan)
             if clip_id:
                 made.append(clip_id)
         except Exception as e:
             log(f"  ! {comp} compilation failed ({e}); the single reels are unaffected", cfg)
 
+    for cid in made:
+        _tell(cfg, db, cid, plan)
     db.mark_source(path, "done", f"{len(made)} clips")
     if not made:
         log("  no moment passed the quality bar in this recording", cfg)
@@ -181,8 +219,93 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
     return made
 
 
+def _long_form(cfg, db: DB, path: Path, info, profile: dict, game: str, plan: dict) -> list[str]:
+    """One video from the whole recording: the critical parts cut together (highlight), or the clip itself
+    with a light edit (full)."""
+    import math
+    from . import request as rq
+    dur, kind = info.duration, plan["kind"]
+    must = rq.times(plan["note"])
+    ctx = {"recent_tracks": [json.loads(r["render_json"] or "{}").get("music") for r in db.clips()[-6:]],
+           "used_styles": []}
+    if kind == "highlight" and dur <= float(plan["length"]) + 3:
+        log(f"  the clip is {rq.fmt_len(dur)}, no longer than the {rq.fmt_len(plan['length'])} you asked for: "
+            "posting all of it instead of cutting it", cfg)
+        kind = "full"
+        plan = {**plan, "kind": "full", "length": plan["length"]}
+    if kind == "full":
+        limit = rq.API_MAX if plan["length"] == "all" else float(plan["length"])
+        m = highlights.best_window(path, info, min(limit, dur), must)
+        style, extra = "classic", []
+        what = rq.fmt_len(m.end - m.start)
+        if dur > limit + 1:
+            log(f"  ✂ the clip is {rq.fmt_len(dur)}: keeping the best {rq.fmt_len(limit)} "
+                f"({int(m.start // 60)}:{int(m.start % 60):02d} to {int(m.end // 60)}:{int(m.end % 60):02d})", cfg)
+        why = "the full video, as you asked"
+    else:
+        target = float(plan["length"])
+        seg = max(5.0, min(15.0, target / 6))
+        n = max(2, math.ceil(target / seg))
+        found = highlights.find_moments(path, info, seg, count=n + 4, min_gap=seg * 0.8)
+        named = [x for x in (highlights.near(path, info, t, seg) for t in must) if x]
+        picks = list(named)
+        for x in found:
+            if len(picks) >= n:
+                break
+            if all(min(x.end, y.end) - max(x.start, y.start) < 0.3 * seg for y in picks):
+                picks.append(x)
+        if len(picks) < 2:
+            log("  ! not enough distinct moments for a highlight video: posting the best stretch instead", cfg)
+            return _long_form(cfg, db, path, info, profile, game, {**plan, "kind": "full", "length": target})
+        m = max(picks, key=lambda x: x.score)
+        style, extra = "highlight", [x.to_dict() for x in picks]
+        what = f"{len(picks)} moments, about {rq.fmt_len(sum(x.end - x.start for x in picks))}"
+        why = "the critical parts, as you asked"
+        log(f"  🎞 highlight video: {what}, in the order they happened", cfg)
+    copy = captions.write_copy(cfg, path, m, profile, "", db.peek_series(game),
+                               brief=rq.brief(plan, what), avoid=recent_hooks(db))
+    copy["quality"] = max(int(copy.get("quality") or 0), int(cfg["review"]["min_quality"]))
+    clip_id = _produce(cfg, db, path, info, profile, game, m, copy, [], style, why, extra, ctx, plan=plan)
+    if clip_id:
+        _tell(cfg, db, clip_id, plan)
+    return [clip_id] if clip_id else []
+
+
+def _tell(cfg, db: DB, clip_id: str, plan: dict) -> None:
+    """When the owner asked for something particular, the reel's chat opens with it and with what was made."""
+    from . import request as rq
+    from .revise import add_chat
+    if rq.is_default(plan):
+        return
+    row = db.get(clip_id)
+    copy, r = copy_of(row), json.loads(row["render_json"] or "{}")
+    asked = rq.label(plan) or rq.NAMES[plan["kind"]]
+    add_chat(db, clip_id, "you", f"When adding the clip: {asked}" + (f". {plan['note']}" if plan["note"] else ""))
+    kind = formats.ON_REQUEST.get("full" if plan["kind"] == "full" else r.get("style"), {}).get("name") \
+        or formats.FORMATS.get(r.get("style", ""), {}).get("name", "reel")
+    bits = [f"{kind}, {rq.fmt_len(r.get('duration') or 0)}"]
+    if r.get("trimmed_from"):
+        bits.append(f"the best part of your {rq.fmt_len(r['trimmed_from'])} clip")
+    sound = (copy.get("ig_audio_plan") or {}).get("title")
+    bits.append(f"Instagram song \"{sound}\" added when it's posted" if sound else
+                "a beat made for it" if str(r.get("music") or "").startswith("beat:") else
+                "your music" if r.get("music") else "game sound only")
+    if not sound and not r.get("music") and plan["sound"] in ("music", "both"):
+        bits[-1] += " (Instagram offered no song for it, so none is on the video)"
+    if r.get("voice"):
+        bits.append("AI voiceover")
+    if (r.get("overrides") or {}).get("no_text"):
+        bits.append("no title")
+    msg = "Made it: " + "; ".join(bits) + "."
+    if r.get("note_applied"):
+        msg += " From your note: " + r["note_applied"] + "."
+    if copy.get("song_ideas") and not sound:
+        msg += " Songs that fit it are listed under the video."
+    add_chat(db, clip_id, "agent", msg)
+
+
 def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: dict, words: list,
-             style: str, why: str, extra_moments: list, ctx: dict) -> str | None:
+             style: str, why: str, extra_moments: list, ctx: dict, plan: dict | None = None) -> str | None:
     """Edit, save and queue one reel. Returns its id."""
     c, rv = cfg["clips"], cfg["review"]
     mcfg, vcfg = cfg.get("music", {}) or {}, cfg.get("voiceover", {}) or {}
@@ -190,22 +313,36 @@ def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: d
     clip_id = f"{game}-{n:04d}"
     folder = cfg.output / "clips" / clip_id
     folder.mkdir(parents=True, exist_ok=True)
+    from . import request as rq
+    from . import trends
+    plan = plan or rq.clean(None)
+    o = rq.overrides(plan)                       # the owner's sound / voice / text choices + their note
+    longform = plan["kind"] in ("highlight", "full")
     compilation = style in editor.COMPILATIONS
-    teaser = bool(c.get("teaser_hook", True)) and not copy.get("graphic_violence")
+    teaser = bool(c.get("teaser_hook", True)) and not copy.get("graphic_violence") and plan["kind"] != "full"
 
-    # voiceover: when there's no commentary and no music (auto), or always. Not on compilations.
-    ig_plan = reach.plan_sound(cfg, db, copy, game, ctx.setdefault("ig_sounds", []), log=lambda m: log(m, cfg))
+    # sound: an Instagram song (attached when posted), else your own tracks, else (only if switched on) a beat
+    want_music = o.get("music")                  # None = the agent's choice
+    ig_plan = None
+    if want_music is not False:
+        ig_plan = reach.plan_sound(cfg, db, copy, game, ctx.setdefault("ig_sounds", []), log=lambda m: log(m, cfg))
+        copy["ig_audio_options"] = reach.LAST.get("options") or []
     if ig_plan:
         copy["ig_audio_plan"] = ig_plan
         ctx["ig_sounds"].append(ig_plan["audio_id"])
     ig_sound = bool(ig_plan)
-    track = None if ig_sound else mus.pick_track(cfg, game, copy.get("music_mood"), ctx["recent_tracks"])
-    # no track of yours and no Instagram sound: the agent makes a beat for this reel (drop on the payoff)
-    make_beat = not ig_sound and track is None and mcfg.get("generate", True)
+    track = None if (ig_sound or want_music is False) else mus.pick_track(cfg, game, copy.get("music_mood"), ctx["recent_tracks"])
+    make_beat = (not ig_sound and track is None and want_music is not False
+                 and (mcfg.get("generate", False) or o.get("beat_ok")))
+    if not (ig_sound or track or make_beat) and o.get("game_audio") == "off":
+        o.pop("game_audio")                      # no music came: muting the game would leave the reel silent
+    copy["song_ideas"] = trends.songs_for(cfg, copy.get("music_mood"), seed=f"{game}-{db.peek_series(game)}")
     voice_wav = None
     transcript = " ".join(w["w"] for w in words)
-    mode = vcfg.get("mode", "auto")
-    if not compilation and voiceover.wanted(cfg, transcript) and (mode == "always" or not (track or ig_sound or make_beat)):
+    mode = "always" if o.get("voiceover") is True else vcfg.get("mode", "auto")
+    allow_voice = o.get("voiceover") is not False and not longform
+    if not compilation and allow_voice and (voiceover.wanted(cfg, transcript) or mode == "always") \
+            and (mode == "always" or not (track or ig_sound or make_beat)):
         ready, reason = voiceover.engine_ready(cfg)
         if not ready:
             log(f"  (voiceover skipped: {reason})", cfg)
@@ -234,20 +371,31 @@ def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: d
         stats = color = None
     look = looks.plan(cfg, game, stats, ai_pick=copy.get("look"), impact=copy.get("impact", True) is not False,
                       graphic=bool(copy.get("graphic_violence")), filmed=info.screen is not None, color=color)
+    looks.apply_overrides(look, o)
     card = formats.end_card(cfg, game, copy, profile, seed=clip_id) if not voice_wav else ""
+    if "end_card" in o:
+        card = o["end_card"]
     if not c.get("subtitles", False):
         words = []                            # no word-by-word subtitles on the video
+    game_level = {"off": 0.0, "low": 0.25}.get(o.get("game_audio") or "")
+    length = sum(float(x["end"]) - float(x["start"]) for x in extra_moments) if extra_moments else m.end - m.start
     spec = editor.RenderSpec(
         source=path, info=info, start=m.start, end=m.end, peak=m.peak,
-        layout=profile.get("layout", "blur"), hook=copy["hook_text"], handle=cfg.get("handle", ""),
+        layout=o.get("layout") or profile.get("layout", "blur"),
+        hook="" if o.get("no_text") else copy["hook_text"], handle=cfg.get("handle", ""),
         words=words, teaser=teaser,
-        punch=bool(c.get("punch_zoom", True)), fps=int(c["fps"]), crf=int(c["crf"]),
-        preset=c.get("preset", "veryfast"), font=c.get("font", "Anton"),
-        music_volume=float(mcfg.get("volume", 0.55)), game_volume=float(mcfg.get("game_volume", 0.6)),
+        punch=bool(o.get("punch_zoom", c.get("punch_zoom", True))), fps=int(c["fps"]),
+        crf=16 if o.get("quality") == "high" else int(c["crf"]),
+        preset="fast" if o.get("quality") == "high" and length <= 90 else c.get("preset", "veryfast"),
+        font=c.get("font", "Anton"),
+        music_volume={"low": 0.35, "high": 0.8}.get(o.get("music_volume"), float(mcfg.get("volume", 0.55))),
+        game_volume=float(mcfg.get("game_volume", 0.6)) if game_level is None else game_level,
+        game_volume_alone=1.0 if game_level is None else game_level,
         voice=voice_wav, style=style, meme_line=str(copy.get("meme_line") or ""),
         look=look, encoder=c.get("encoder", "auto"),
         moments=extra_moments, freeze_line=str(copy.get("freeze_line") or ""), end_card=card,
-        cut_seconds=formats.cut_seconds(cfg, game), text_scale=float(c.get("text_scale", 1.0)),
+        cut_seconds=formats.cut_seconds(cfg, game), text_scale=float(o.get("text_scale") or c.get("text_scale", 1.0)),
+        maxrate_k=min(9000, int(280 * 8 * 1000 / length)) if length > 60 else 0,   # long videos stay under 300 MB
     )
     # music: a trending Instagram sound is attached at posting time when that's on; otherwise the library
     # track for the AI's mood, with its drop lined up on the payoff of the finished edit
@@ -269,10 +417,16 @@ def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: d
     copy["edit_style"], copy["style_why"] = result["style"], (result.get("fallback") or why)
     media.grab_frame(folder / "reel.mp4", result["cover_ms"] / 1000, folder / "cover.jpg", width=1080)
     (folder / "instagram_caption.txt").write_text(captions.instagram_text(copy), encoding="utf-8")
+    from .revise import describe
+    note_kw = {k: v for k, v in rq.overrides({**rq.clean(None), "note": plan["note"]}).items()} if plan["note"] else {}
     render_meta = {**result, "layout": spec.layout, "teaser": spec.teaser, "words": words,
                    "music": str(track) if track else (beat_note or None), "music_seek": seek, "music_delay": delay,
                    "music_mood": copy.get("music_mood"), "voice": str(voice_wav) if voice_wav else None,
-                   "ig_sound_planned": ig_sound, "moments": extra_moments, "end_card_text": card}
+                   "ig_sound_planned": ig_sound, "moments": extra_moments, "end_card_text": card,
+                   "overrides": o, "format": "full" if plan["kind"] == "full" else None,
+                   "note_applied": describe(note_kw) if note_kw else "",
+                   "trimmed_from": round(info.duration, 1) if plan["kind"] == "full" and info.duration > m.end - m.start + 1 else None}
+    copy["owner_plan"] = plan
     (folder / "meta.json").write_text(json.dumps(
         {"id": clip_id, "source": str(path), "moment": m.to_dict(), "copy": copy, "render": render_meta},
         indent=2, ensure_ascii=False), encoding="utf-8")

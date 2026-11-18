@@ -69,10 +69,12 @@ class RenderSpec:
     cut_seconds: float = 2.0           # montage cut length (learned from top reels)
     text_scale: float = 1.0            # all on-screen text bigger (>1) or smaller (<1)
     game_volume_alone: float = 1.0     # game sound level when there is no music (0 = muted)
+    maxrate_k: int = 0                 # cap the video bitrate (kbit/s) so long videos stay under Instagram's 300 MB
 
 
-STYLES = ("classic", "slowmo", "meme_bar", "pov", "replay", "freeze", "top3", "montage")
-COMPILATIONS = {"top3": 3, "montage": 4}       # style -> moments it needs
+STYLES = ("classic", "slowmo", "meme_bar", "pov", "replay", "freeze", "top3", "montage", "highlight")
+COMPILATIONS = {"top3": 3, "montage": 4, "highlight": 2}       # style -> moments it needs
+ON_REQUEST = {"highlight"}     # only made when the owner asks for it when adding a clip
 
 
 @dataclass
@@ -377,7 +379,9 @@ def _render_seg(spec: RenderSpec, seg: Seg, i: int, workdir: Path) -> Path:
             cmd += ["-f", "lavfi", "-t", f"{out_dur:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
             graph += ";[1:a]anull[aout]"
     cmd += media.graph_args(graph, workdir, out.stem + "_graph.txt")
-    cmd += ["-map", "[vout]", "-map", "[aout]", *media.encode_args(spec.crf, spec.preset, spec.encoder),
+    cap = ["-maxrate", f"{spec.maxrate_k}k", "-bufsize", f"{spec.maxrate_k * 2}k"] \
+        if spec.maxrate_k and media.video_encoder(spec.encoder) == "libx264" else []
+    cmd += ["-map", "[vout]", "-map", "[aout]", *media.encode_args(spec.crf, spec.preset, spec.encoder), *cap,
             "-r", str(spec.fps), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2",
             "-t", f"{out_dur:.3f}", out.name]
     media.run(cmd, cwd=workdir)   # run inside workdir so the .ass / font paths need no escaping
@@ -460,6 +464,23 @@ def timeline(spec: RenderSpec) -> dict:
                             hook_until=min(1.9, e - s) if n == 0 else 0.0))
         payoff = sum(x.out for x in segs[:-1]) + (segs[-1].impact_at or 0)
         cover = min(0.9, segs[0].out - 0.1)                                     # first cut, hook on screen
+    elif style == "highlight":
+        # the critical parts of a whole session, each kept whole, in the order they happened; the best one
+        # gets the punch zoom and the music drop
+        picks = sorted(moments, key=lambda m: m["start"])
+        best = max(picks, key=lambda m: m.get("score", 0))
+        payoff = 0.0
+        for n, m in enumerate(picks):
+            s = max(0.0, float(m["start"]))
+            e = min(dur_src, float(m["end"]))
+            top = m is best
+            if top:
+                payoff = sum(x.out for x in segs) + (m["peak"] - s)
+            segs.append(Seg(start=s, dur=e - s, kind="cut", cut_flash=n > 0,
+                            impact_at=(m["peak"] - s) if top else None,
+                            punch_at=(m["peak"] - s) if (top and spec.punch) else None,
+                            hook_until=min(2.6, e - s) if n == 0 else 0.0))
+        cover = min(1.2, segs[0].out - 0.1)                                     # the hook on the first part
     elif style == "replay":
         end = min(spec.end, spec.peak + 1.4)
         segs.append(Seg(start=spec.start, dur=end - spec.start, kind="main", hook_until=2.6,

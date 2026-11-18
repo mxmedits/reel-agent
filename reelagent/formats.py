@@ -35,6 +35,8 @@ FORMATS = {
     "montage":  {"name": "Montage", "about": "four to six quick cuts of the best moments",
                  "fits": "long sessions with lots of action"},
 }
+ON_REQUEST = {"highlight": {"name": "Highlight video", "about": "the critical parts of a whole session, in order"},
+              "full": {"name": "Full video", "about": "the whole clip, lightly edited"}}
 SINGLES = [f for f in FORMATS if f not in editor.COMPILATIONS]
 NEEDS_LINE = {"meme_bar", "pov"}       # need a written line, so they need the AI
 

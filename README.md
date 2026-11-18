@@ -70,10 +70,37 @@ Instagram, a different song, music louder or quieter.
 - **Music from Instagram** (Settings, on by default): once Instagram is connected, the agent picks a trending
   Instagram song that fits each reel while editing it, shows it to you before you approve, and Instagram adds
   it when the reel is posted. The app's preview can't play Instagram's music, so it plays without it.
-- **A beat made for the reel**: when Instagram isn't connected or has nothing that fits, the agent makes its own
-  royalty-free beat in the reel's mood (hype, intense, epic, chill, funny, suspense), with the build-up under
-  the start and the drop on the big moment.
+- **A beat made for the reel** (Settings, off by default): when Instagram has nothing, the agent can make its own
+  royalty-free beat in the reel's mood, with the drop on the big moment. Ask for it in the chat with
+  "use your own beat", or switch it on for every reel.
 - **Your own tracks**: files in `music/<mood>/` (tracks you have the rights to) are used before the beats.
+
+## 🎛 Tell the agent what to make from each clip
+
+After you pick gameplay, the app asks **What should the agent make?**
+
+- **Let the agent choose**: short reels of the best moments, plus a montage when there's plenty.
+- **Short reels**: each big moment as its own reel (1 to 5 of them).
+- **One highlight video**: the critical parts of the whole gameplay cut into one video, in the order they
+  happened (30 s, 1, 1.5, 2 or 3 minutes).
+- **Full video**: the whole gameplay as one video with a light edit (title, colour, sound, no cuts). Longer
+  than the length you pick, it keeps the most exciting stretch; "All of it" goes up to Instagram's 15 minutes.
+- **Top 3 countdown** and **Montage**.
+
+Then the sound (game sound, music, or both), the AI voiceover (off by default), the text (title and end
+question, title only, or none), and a note in your own words. A time in the note ("keep the kill at 1:52")
+puts that moment in; edit wishes ("brighter", "mute the game") are applied to the first version.
+
+Several clips at once? Choose **One gameplay session** and they are joined in order and edited as one, or
+**Separate clips** for one edit each.
+
+## 🎶 Songs
+
+When Instagram's music search for apps offers songs, the agent picks one for each reel and shows you two
+alternatives with a **Use this** button; Instagram attaches the song when the reel is posted. When it offers
+none (the case for some accounts), the reel keeps its game sound and the agent lists songs that fit, from its
+weekly trend research, with **Post it myself with a song**: download, add the song in Instagram, then tap
+**I posted it**. The agent's own beats are off unless you switch them on in Settings.
 
 ## 🪪 Your profile, kept follow-worthy
 

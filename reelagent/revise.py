@@ -164,6 +164,7 @@ RULES = [   # (pattern, plan changes): used without an AI key, and to catch anyt
     (r"\binstagram\b[^.]*\b(music|song|sound|audio|track)\b|\b(music|song|sound|audio|track)\b[^.]*\b(from|on|of) (instagram|insta|ig)\b", {"music": True, "music_source": "instagram"}),
     (r"\b(different|another|other|new|change the|change) (song|music|track|sound)\b|\bdon'?t like (the|this) (song|music|track)\b", {"music": True, "new_song": True}),
     (r"\b(can'?t|cannot|can not) hear (the )?(music|song)\b", {"music": True, "game_audio": "off"}),
+    (r"\b(your own|your|own|agent'?s?|made) (beat|music)\b|\bmake (a|the|me a) beat\b", {"music": True, "music_source": "agent", "beat_ok": True}),
     (r"\b(add|put|use|with|need|want|include)\b[^.]*\b(music|song|beat|track|soundtrack)\b", {"music": True}),
     (r"\b(music|song|beat)\b[^.]*\b(not added|missing|isn'?t (there|added)|is not)\b|\bno music (was|is) added\b", {"music": True}),
     (r"\b(no|remove|without|stop)\b[^.]*\b(music|song|beat)\b", {"music": False}),
@@ -400,15 +401,23 @@ def remake(cfg, db: DB, clip_id: str, plan: dict, src: Path) -> dict:
                 copy["ig_audio_plan"] = picked
             else:
                 music_note = "ig_empty" if reach.LAST.get("why") == "empty" else "no_fit"
-        if not copy.get("ig_audio_plan"):                  # Instagram can't supply one: the reel gets a beat
-            track = "beat"
+        if not copy.get("ig_audio_plan"):                  # Instagram can't supply one: yours, or a beat if allowed
+            track = mus.pick_track(cfg, row["game"], copy.get("music_mood") or "hype", []) or \
+                ("beat" if (mcfg.get("generate", False) or o.get("beat_ok")) else None)
     else:
         copy.pop("ig_audio_plan", None)
         mood = copy.get("music_mood") or "hype"
         track = None if plan.get("new_song") else mus.pick_track(cfg, row["game"], mood, [])
         if track is None:
-            track = "beat"
+            track = "beat"                                   # the owner asked for the agent's own music
+    if want_music and not track and not copy.get("ig_audio_plan"):
+        music_note = music_note or "no_fit"
+    if not copy.get("song_ideas"):
+        from . import trends
+        copy["song_ideas"] = trends.songs_for(cfg, copy.get("music_mood"), seed=clip_id)
     game_level = {"off": 0.0, "low": 0.25, "normal": None}.get(o.get("game_audio") or "normal")
+    if game_level == 0.0 and not track and not copy.get("ig_audio_plan"):
+        game_level = None                                    # no music came: a muted game would be silence
     voice = None
     if o.get("voiceover") is True or (o.get("voiceover") is None and rmeta.get("voice") and not want_music):
         lines = copy.get("voiceover") or []
@@ -421,7 +430,8 @@ def remake(cfg, db: DB, clip_id: str, plan: dict, src: Path) -> dict:
                 voice = None
     spec = editor.RenderSpec(
         source=src, info=info, start=start, end=end, peak=peak,
-        layout=o.get("layout") or rmeta.get("layout", "blur"), hook=copy["hook_text"], handle=cfg.get("handle", ""),
+        layout=o.get("layout") or rmeta.get("layout", "blur"), hook="" if o.get("no_text") else copy["hook_text"],
+        handle=cfg.get("handle", ""),
         words=[], teaser=o.get("teaser", rmeta.get("teaser", True)),
         punch=o.get("punch_zoom", bool(c.get("punch_zoom", True))),
         fps=int(c["fps"]), crf=16 if o.get("quality") == "high" else int(c["crf"]),
@@ -435,6 +445,7 @@ def remake(cfg, db: DB, clip_id: str, plan: dict, src: Path) -> dict:
         freeze_line=str(copy.get("freeze_line") or ""), end_card=end_card, look=look,
         encoder=c.get("encoder", "auto"), cut_seconds=formats.cut_seconds(cfg, row["game"]),
         text_scale=float(o.get("text_scale") or c.get("text_scale", 1.0)),
+        maxrate_k=min(9000, int(280 * 8 * 1000 / max(end - start, 1))) if end - start > 60 else 0,
     )
     if track == "beat":
         tl = editor.timeline(spec)
@@ -453,6 +464,9 @@ def remake(cfg, db: DB, clip_id: str, plan: dict, src: Path) -> dict:
     result["has_music"] = bool(spec.music) or bool(copy.get("ig_audio_plan"))
     result["has_voice"], result["game_level"] = bool(voice), game_level
     result["ig_sound"], result["music_note"] = copy.get("ig_audio_plan"), music_note
+    result["beat"] = track == "beat"
+    result["kept_game"] = o.get("game_audio") == "off" and game_level is None
+    result["songs"] = copy.get("song_ideas") or []
     copy["approved"] = False                                  # a new version always needs a fresh OK
     copy["edit_style"] = result["style"]
     db.update(clip_id, copy_json=copy, render_json=rmeta, start=start, end=end, peak=peak, file=str(out),
@@ -490,7 +504,8 @@ def handle(cfg, db: DB, clip_id: str, text: str, src: Path | None) -> str:
             done, missed = [], []
             for k, v in changes.items():
                 if k == "music" and v and not res.get("has_music"):
-                    missed.append("music (no track could be made)")
+                    if not res.get("music_note"):                 # the sound note below explains it otherwise
+                        missed.append("music (no track could be made)")
                 elif k == "voiceover" and v and not res.get("has_voice"):
                     missed.append("an AI voiceover (the voice engine isn't available)")
                 else:
@@ -507,17 +522,25 @@ def handle(cfg, db: DB, clip_id: str, text: str, src: Path | None) -> str:
                 reply += (f" Music: \"{ig.get('title', '')}\"" + (f" by {ig['artist']}" if ig.get("artist") else "")
                           + " from Instagram. Instagram adds it when the reel is posted, so the preview here plays "
                             "without it.")
-            elif res.get("music_note") == "no_instagram":
-                reply += (" I can't take music from Instagram until Instagram is connected (Settings, Connect "
-                          "Instagram), so for now it has a beat I made for it, with the drop on the big moment.")
-            elif res.get("music_note") == "ig_empty":
-                reply += (" I asked Instagram for music, but its music search for apps returned no songs for your "
-                          "account right now (Instagram only gives apps the sounds it has cleared for them, and none "
-                          "came back). So it has a beat I made for it. I check again twice a day.")
-            elif res.get("music_note") == "no_fit":
-                reply += " Instagram had no sound that fits this clip right now, so it has a beat I made for it."
-            elif changes.get("music") and res.get("has_music"):
-                reply += " The music is a beat I made for this reel, with the drop on the big moment."
+            else:
+                why = {"no_instagram": "Instagram isn't connected yet (Settings, Connect Instagram)",
+                       "ig_empty": "Instagram's music search for apps returned no songs for your account right now "
+                                   "(it only gives apps the sounds it has cleared for them; I check twice a day)",
+                       "no_fit": "Instagram offered nothing that fits this clip"}.get(res.get("music_note"))
+                if why and res.get("beat"):
+                    reply += f" {why[0].upper() + why[1:]}, so it has a beat I made for it."
+                elif why:
+                    reply += f" No song is on the video itself: {why}."
+                    songs = res.get("songs") or []
+                    if songs:
+                        reply += (" Songs that fit it, trending on Reels: "
+                                  + "; ".join(f"\"{x['title']}\"" + (f" by {x['artist']}" if x.get("artist") else "") for x in songs)
+                                  + ". Tap \"Post it myself with a song\" under the video to add one in Instagram.")
+                    reply += " Say \"use your own beat\" if you want the agent's music instead."
+                    if res.get("kept_game"):
+                        reply += " I kept the game sound on so the video isn't silent."
+                elif changes.get("music") and res.get("beat"):
+                    reply += " The music is a beat I made for this reel, with the drop on the big moment."
         except Exception as e:
             reply = f"The re-edit failed, so the reel is unchanged: {str(e)[-200:]}"
     if plan.get("cannot"):
@@ -525,4 +548,26 @@ def handle(cfg, db: DB, clip_id: str, text: str, src: Path | None) -> str:
     if plan.get("remember"):
         reply += " I'll do this on every reel from now on."
     add_chat(db, clip_id, "agent", reply.strip())
+    return reply
+
+
+def use_song(cfg, db: DB, clip_id: str, option: dict, src: Path | None) -> str:
+    """The owner picked one of the Instagram songs offered for this reel. Instagram attaches it at posting;
+    music already mixed into the video comes off so the two don't play at once."""
+    row = db.get(clip_id)
+    copy, r = copy_of(row), render_of(row)
+    pick = {k: option.get(k) for k in ("audio_id", "title", "artist", "source", "link") if option.get(k)}
+    if not pick.get("audio_id"):
+        return "That song isn't available any more. Pick another one."
+    copy["ig_audio_plan"], copy["approved"] = pick, False
+    db.update(clip_id, copy_json=copy, status="ready" if (cfg.get("review") or {}).get("require_approval", True) else "queued")
+    name = f"\"{pick.get('title', '')}\"" + (f" by {pick['artist']}" if pick.get("artist") else "")
+    reply = f"Song set: {name}. Instagram adds it when the reel is posted, so the preview here plays without it."
+    if r.get("music"):
+        if src is not None and Path(src).exists():
+            remake(cfg, db, clip_id, {"music": True, "music_source": "instagram"}, Path(src))
+            reply += " I took the old music off the video so the song plays on its own."
+        else:
+            reply += " The original clip isn't stored any more, so the old music stays under it."
+    add_chat(db, clip_id, "agent", reply)
     return reply

@@ -66,7 +66,7 @@ LAST = {"why": ""}     # why the last plan_sound found nothing: "empty" (Instagr
 def plan_sound(cfg, db, copy: dict, game: str, exclude: list[str] | None = None, log=print) -> dict | None:
     """Choose the Instagram sound for a reel while it's being edited, so the owner sees it before approving.
     None when Instagram isn't connected, sounds are switched off, or nothing fits (LAST["why"] says which)."""
-    LAST["why"] = "no_fit"
+    LAST["why"], LAST["options"] = "no_fit", []
     from . import instagram
     from .db import copy_of
     igc = cfg.get("instagram") or {}
@@ -91,7 +91,7 @@ def pick_sound(cfg, ig, copy: dict, game: str, recent_ids: list[str], log=print)
                 continue
             seen.add(aid)
             cands.append({"audio_id": aid, "title": it.get("title", ""), "artist": it.get("display_artist", ""),
-                          "source": source})
+                          "source": source, "link": it.get("on_platform_audio_preview_link") or ""})
 
     try:
         add(_cached_trending(cfg, ig), "trending now")
@@ -114,6 +114,7 @@ def pick_sound(cfg, ig, copy: dict, game: str, recent_ids: list[str], log=print)
         return None
     cands = cands[:30]
     if not cfg.ai_available:
+        LAST["options"] = cands[:3]
         return cands[0]
     from .captions import ask_claude, parse_json
 
@@ -128,9 +129,11 @@ def pick_sound(cfg, ig, copy: dict, game: str, recent_ids: list[str], log=print)
     try:
         choice = parse_json(ask_claude(cfg, "You pick music for short gaming videos.", [{"type": "text", "text": prompt}], 200))
         i = choice.get("index")
-        return cands[int(i)] if i is not None and 0 <= int(i) < len(cands) else None
+        pick = cands[int(i)] if i is not None and 0 <= int(i) < len(cands) else None
     except Exception:
-        return cands[0]
+        pick = cands[0]
+    LAST["options"] = ([pick] if pick else []) + [c for c in cands if c is not pick][:3 - bool(pick)]
+    return pick
 
 
 # ── what Instagram's Audio API offers this account ──────────────────────────

@@ -48,7 +48,9 @@ SCHEMA = """{
   "reel_types": {"recommended": ["<up to 4 of the same list, strongest first>"],
                  "new_ideas": ["<kinds of reel that are trending but not in the list, one line each>"]},
   "music": {"genres": ["..."], "search_terms": ["<3-6 short terms to search Instagram's music library>"],
-            "mood_bias": "<hype|intense|epic|chill|funny|suspense>"},
+            "mood_bias": "<hype|intense|epic|chill|funny|suspense>",
+            "songs": [{"title": "<song>", "artist": "<artist>", "mood": "<hype|intense|epic|chill|funny|suspense>",
+                       "why": "<where it is trending, 12 words max>"}]},
   "games": {"<game key>": {"angles": ["..."], "timely": ["<dated events/moments>"], "hashtags": ["#..."],
                             "avoid": ["..."]}},
   "caption_tips": ["..."],
@@ -67,6 +69,8 @@ on the payoff), replay (full speed, then a slow-motion instant replay), freeze (
 before the payoff), meme_bar (white caption bar with a relatable line), pov (a "POV: ..." caption box),
 top3 (three moments counted down), montage (quick cuts of the best moments). Any of them can end on a question card.
 Say which of these fit what is trending now, and name trending kinds the editor cannot make yet under new_ideas.
+music.songs: 8 to 12 real songs that are trending on Instagram Reels THIS WEEK in gaming clips and edits (phonk,
+hype, cinematic...), each one named in a source you found. Never invent a song or an artist; fewer is fine.
 Finish with ONLY the JSON object, no prose after it."""
 
 
@@ -275,3 +279,20 @@ def prompt_notes(cfg, game: str) -> str:
 
 def music_terms(cfg) -> list[str]:
     return [t for t in (load(cfg).get("music") or {}).get("search_terms", []) if isinstance(t, str)][:6]
+
+
+def songs_for(cfg, mood: str | None, seed: str = "", n: int = 3) -> list[dict]:
+    """Up to n trending songs from this week's research for a reel in this mood (the owner adds them in
+    Instagram's own music picker, which apps can't use for every account)."""
+    import random
+    songs = [x for x in ((load(cfg).get("music") or {}).get("songs") or [])
+             if isinstance(x, dict) and str(x.get("title") or "").strip()]
+    if not songs:
+        return []
+    near = {"hype": ["intense"], "intense": ["hype", "epic"], "epic": ["intense"], "chill": ["funny"],
+            "funny": ["chill", "hype"], "suspense": ["epic", "intense"]}
+    rank = lambda x: 0 if x.get("mood") == mood else 1 if x.get("mood") in near.get(mood or "", []) else 2  # noqa: E731
+    rnd = random.Random(seed)
+    songs = sorted(songs, key=lambda x: (rank(x), rnd.random()))
+    return [{"title": " ".join(str(x["title"]).split())[:80], "artist": " ".join(str(x.get("artist") or "").split())[:60],
+             "why": " ".join(str(x.get("why") or "").split())[:100]} for x in songs[:n]]

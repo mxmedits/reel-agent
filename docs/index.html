@@ -185,6 +185,24 @@ code.long{white-space:normal;word-break:break-word}
 #toast{position:fixed;left:50%;bottom:calc(var(--safe-b) + 96px);transform:translateX(-50%);background:var(--ink);color:var(--bg);
   padding:11px 18px;border-radius:12px;font-weight:600;font-size:15px;z-index:20;max-width:88vw;text-align:center}
 .empty{padding:26px 6px;text-align:center;color:var(--ink2)}
+/* what to make from a clip: one card per kind, the picked one outlined */
+.kinds{display:grid;gap:8px;margin-top:10px}
+.kinds label{display:block;position:relative;padding:12px 14px 12px 44px;border-radius:12px;background:var(--bg);border:1.5px solid var(--line)}
+.kinds input{position:absolute;left:14px;top:15px;width:18px;height:18px;accent-color:var(--queued);margin:0}
+.kinds label:has(input:checked){border-color:var(--queued)}
+.kinds b{display:block;font-weight:650}
+.kinds span{display:block;font-size:13.5px;color:var(--ink2);margin-top:2px}
+.kinds select{margin-top:8px;padding:8px 10px;border-radius:10px;background:var(--surface);border:1.5px solid var(--line);color:var(--ink);font-size:15px}
+.kinds label:not(:has(input:checked)) select{display:none}
+.sheet h4{font-size:15px;margin:18px 0 0;font-weight:650}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.chips label{position:relative}
+.chips input{position:absolute;opacity:0}
+.chips span{display:block;padding:8px 13px;border-radius:999px;background:var(--bg);border:1.5px solid var(--line);font-size:14.5px;color:var(--ink2)}
+.chips input:checked + span{border-color:var(--queued);color:var(--ink);font-weight:600}
+.chips input:focus-visible + span{outline:2px solid var(--next);outline-offset:2px}
+.song{display:flex;gap:10px;align-items:center;padding:10px 12px;margin-top:8px;border-radius:12px;background:var(--bg)}
+.song div{flex:1;min-width:0} .song small{display:block;color:var(--muted);font-size:12.5px}
 /* profile fixes: each option is a card with its own copy button */
 .score{display:flex;align-items:baseline;gap:8px}
 .score b{font-family:var(--display);font-size:40px;font-weight:400;line-height:1}
@@ -334,7 +352,7 @@ async function setSecret(name, value) {
 /* ── uploading a clip in parts ──────────────────────────────────────────── */
 const toB64 = (blob) => new Promise((res, rej) => { const r = new FileReader();
   r.onload = () => res(String(r.result).slice(String(r.result).indexOf(",") + 1)); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
-async function uploadFile(file, game, onProgress) {
+async function uploadFile(file, game, onProgress, plan = null, group = null) {
   const n = Math.max(1, Math.ceil(file.size / CHUNK)), shas = new Array(n);
   let next = 0, done = 0;
   const worker = async () => {
@@ -346,18 +364,22 @@ async function uploadFile(file, game, onProgress) {
     }
   };
   await Promise.all([worker(), worker()]);
-  const meta = { v: 1, name: file.name || "clip.mp4", game, size: file.size, parts: n, type: file.type, at: new Date().toISOString() };
+  const meta = { v: 1, name: file.name || "clip.mp4", game, size: file.size, parts: n, type: file.type, at: new Date().toISOString(),
+                 ...(plan ? { plan } : {}), ...(group ? { group: group.id, part: group.k, of: group.n } : {}) };
   const tree = await retry(() => gh("/git/trees", { method: "POST", body: { tree: [
     { path: "meta.json", mode: "100644", type: "blob", content: JSON.stringify(meta) },
     ...shas.map((sha, i) => ({ path: `part-${String(i).padStart(5, "0")}`, mode: "100644", type: "blob", sha })) ] } }));
   const commit = await retry(() => gh("/git/commits", { method: "POST", body: { message: `clip: ${meta.name}`, tree: tree.sha, parents: [] } }));
   const d = new Date(), p = (x) => String(x).padStart(2, "0");
-  const id = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${Math.random().toString(36).slice(2, 6)}`;
+  const id = group ? `g-${group.id}-${group.k}of${group.n}`
+    : `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${Math.random().toString(36).slice(2, 6)}`;
   await retry(() => gh("/git/refs", { method: "POST", body: { ref: `refs/heads/inbox/${id}`, sha: commit.sha } }));
 }
-async function startUpload(files) {
+async function startUpload(files, plan = null, together = false) {
   if (!files.length) return;
   if (DEMO) { toast("Demo: nothing is uploaded"); return; }
+  const d = new Date(), p2 = (x) => String(x).padStart(2, "0");
+  const gid = together ? `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}-${Math.random().toString(36).slice(2, 6)}` : null;
   const game = ($('input[name="game"]:checked') || {}).value || "auto";
   const total = files.reduce((a, f) => a + f.size, 0);
   S.upload = { files: files.map((f) => ({ name: f.name, size: f.size, p: 0, state: "waiting" })), total, done: false, error: "" };
@@ -366,7 +388,7 @@ async function startUpload(files) {
   try {
     for (let i = 0; i < files.length; i++) {
       const u = S.upload.files[i]; u.state = "sending";
-      await uploadFile(files[i], game, (p) => { u.p = p; paintUpload(); });
+      await uploadFile(files[i], game, (p) => { u.p = p; paintUpload(); }, plan, gid ? { id: gid, k: i + 1, n: files.length } : null);
       u.state = "sent"; u.p = 1; paintUpload();
     }
     await wake();
@@ -491,6 +513,69 @@ function profileSheet() {
     <button class="btn" style="margin-top:14px" data-act="profileCheck">I changed it, check again</button>
     <p class="small muted" style="margin-top:10px">${p.source === "ai" ? "Written by the AI" : "Written from the agent's templates (the AI was busy; it tries again in a few hours)"}, ${esc(ago(p.written_at))}. Checked ${esc(ago(p.read_at))}.</p>`);
 }
+const PLAN0 = { kind: "auto", count: 3, length: 60, full: "180", sound: "auto", voice: "off", text: "auto", together: "1" };
+function loadPlan() { try { return { ...PLAN0, ...JSON.parse(localStorage.getItem("ra_plan") || "{}"), note: "" }; } catch (e) { return { ...PLAN0 }; } }
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+function clipLength(file) {
+  return new Promise((res) => {
+    const v = document.createElement("video"), url = URL.createObjectURL(file);
+    const done = (d) => { URL.revokeObjectURL(url); res(d); };
+    v.preload = "metadata"; v.onloadedmetadata = () => done(isFinite(v.duration) ? v.duration : 0); v.onerror = () => done(0);
+    setTimeout(() => done(0), 4000); v.src = url;
+  });
+}
+function planSheet(files) {
+  const p = loadPlan(), many = files.length > 1;
+  const radio = (name, v, label, cur) => `<label><input type="radio" name="${name}" value="${v}" ${String(cur) === String(v) ? "checked" : ""}><span>${label}</span></label>`;
+  const opt = (v, t, cur) => `<option value="${v}" ${String(cur) === String(v) ? "selected" : ""}>${t}</option>`;
+  const kinds = [
+    ["auto", "Let the agent choose", "Short reels of the best moments, plus a montage when there's plenty."],
+    ["shorts", "Short reels", "Each big moment as its own reel, 15 to 30 seconds.",
+      `<select name="count" aria-label="How many reels">${[1, 2, 3, 4, 5].map((n) => opt(n, `${n} reel${n > 1 ? "s" : ""}`, p.count)).join("")}</select>`],
+    ["highlight", "One highlight video", "The critical parts of the whole gameplay cut into one video, in the order they happened.",
+      `<select name="length" aria-label="Length">${[[30, "30 seconds"], [60, "1 minute"], [90, "90 seconds"], [120, "2 minutes"], [180, "3 minutes"]].map(([v, t]) => opt(v, t, p.length)).join("")}</select>`],
+    ["full", "Full video", "The whole gameplay as one video. A light edit only: title, colour and sound, no cuts.",
+      `<select name="full" aria-label="How long">${[["60", "Up to 1 minute (the best minute if longer)"], ["180", "Up to 3 minutes (the best 3 if longer)"], ["all", "All of it, up to 15 minutes"]].map(([v, t]) => opt(v, t, p.full)).join("")}</select>`],
+    ["top3", "Top 3 countdown", "The 3 best moments, ranked #3 to #1."],
+    ["montage", "Montage", "Fast cuts of the best moments, about 20 seconds."],
+  ];
+  openSheet(`<h3 style="font-size:24px;margin:4px 46px 4px 0">What should the agent make?</h3>
+    <p class="small ink2" id="planLen">${many ? `${files.length} clips` : esc(files[0].name)}</p>
+    <form id="planForm">
+      ${many ? `<h4>These ${files.length} clips are</h4><div class="kinds">
+        <label><input type="radio" name="together" value="1" ${p.together === "1" ? "checked" : ""}><b>One gameplay session</b><span>Joined in order, then edited as one. Use this when you filmed one long game in parts.</span></label>
+        <label><input type="radio" name="together" value="0" ${p.together !== "1" ? "checked" : ""}><b>Separate clips</b><span>Each one edited on its own.</span></label></div>` : ""}
+      <h4>Make</h4>
+      <div class="kinds">${kinds.map(([v, t, d, extra]) => `<label><input type="radio" name="kind" value="${v}" ${p.kind === v ? "checked" : ""}><b>${t}</b><span>${d}</span>${extra || ""}</label>`).join("")}</div>
+      <p class="small muted" id="fullNote" style="margin-top:8px"></p>
+      <h4>Sound</h4>
+      <div class="chips">${radio("sound", "auto", "Agent's choice", p.sound)}${radio("sound", "game", "Game sound only", p.sound)}${radio("sound", "music", "Music only", p.sound)}${radio("sound", "both", "Game sound and music", p.sound)}</div>
+      <p class="small muted" style="margin-top:6px">Music is a song from Instagram's library when Instagram offers one. When it doesn't, the reel keeps the game sound and the agent suggests songs you can add in Instagram.</p>
+      <h4>AI voiceover</h4>
+      <div class="chips">${radio("voice", "off", "Off", p.voice)}${radio("voice", "on", "On", p.voice)}${radio("voice", "auto", "Agent's choice", p.voice)}</div>
+      <h4>Text on the video</h4>
+      <div class="chips">${radio("text", "auto", "Title and end question", p.text)}${radio("text", "title", "Title only", p.text)}${radio("text", "none", "No title", p.text)}</div>
+      <label class="f">Anything else? (optional)<textarea name="note" rows="3" style="min-height:76px" placeholder="For example: keep the sniper kill at 1:52, start with the crash, make it brighter"></textarea></label>
+      <button class="btn primary" style="margin-top:14px">Send to the agent</button>
+    </form>`, (root) => {
+    const f = $("#planForm", root);
+    Promise.all(files.map(clipLength)).then((ds) => {
+      const total = ds.reduce((a, b) => a + b, 0); if (!total) return;
+      const el = $("#planLen", root); if (el) el.textContent = many ? `${files.length} clips, ${mmss(total)} in total` : `${files[0].name}, ${mmss(total)}`;
+      const n = $("#fullNote", root); if (n && total > 900) n.textContent = "Instagram takes videos up to 15 minutes; past that the agent keeps the best 15.";
+    });
+    f.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const v = (n) => (f.querySelector(`[name="${n}"]:checked`) || f.querySelector(`[name="${n}"]`) || {}).value;
+      const kind = v("kind");
+      const keep = { kind, count: +f.count.value, length: +f.length.value, full: f.full.value, sound: v("sound"), voice: v("voice"), text: v("text"), together: many ? v("together") : p.together };
+      localStorage.setItem("ra_plan", JSON.stringify(keep));
+      const plan = { kind, count: keep.count, length: kind === "full" ? (keep.full === "all" ? "all" : +keep.full) : keep.length,
+                     sound: keep.sound, voice: keep.voice, text: keep.text, note: f.note.value.trim().slice(0, 600) };
+      closeSheet(); startUpload(files, plan, many && keep.together === "1");
+    });
+  });
+}
 function uploadPanel() {
   const u = S.upload; if (!u) return "";
   const rows = u.files.map((f) => `<div class="small" style="display:flex;justify-content:space-between;gap:10px;margin-top:6px">
@@ -498,7 +583,7 @@ function uploadPanel() {
       <span class="${f.state === "sent" ? "ok" : "muted"}">${f.state === "sent" ? "sent" : f.state === "sending" ? "sending" : fmtMB(f.size)}</span></div>`).join("");
   if (u.error) return `<div class="panel"><h3>The upload stopped</h3><p class="err">${esc(u.error)}</p>
       <p class="small muted">Clips that show "sent" are safe. Add the others again.</p><button class="btn slim" data-act="clearUpload">OK</button></div>`;
-  if (u.done) return `<div class="panel"><h3>Sent to the agent</h3><p class="ink2">It is cutting reels from ${u.files.length === 1 ? "your clip" : `your ${u.files.length} clips`} now. This takes a few minutes; you can close the app. New reels show up under Reels.</p>
+  if (u.done) return `<div class="panel"><h3>Sent to the agent</h3><p class="ink2">It is editing ${u.files.length === 1 ? "your clip" : `your ${u.files.length} clips`} now. This takes a few minutes; you can close the app. New reels show up under Reels.</p>
       <button class="btn slim" data-act="clearUpload">OK</button></div>`;
   return `<div class="panel"><h3>Sending your gameplay</h3><div class="bar"><b id="upBar"></b></div>
       <p class="small ink2" id="upTxt">Starting</p>${rows}<p class="small muted" style="margin-top:10px">Keep this page open until it finishes.</p></div>`;
@@ -513,7 +598,7 @@ function homeView() {
   const pick = picked && games[picked] ? picked : Object.keys(games)[0];
   const next = st.queue[0];
   const up = st.uploads.slice(0, 3).map((u) => `<li><div class="body"><div>${esc(u.name)}</div>
-      <div class="small ${u.status === "failed" ? "err" : "muted"}">${u.status === "done" ? `${u.reels.length} reel${u.reels.length === 1 ? "" : "s"} made` : u.status === "retrying" ? "trying again on the next visit" : esc(u.note || u.status)}, ${ago(u.at)}</div></div></li>`).join("");
+      <div class="small ${u.status === "failed" ? "err" : "muted"}">${u.plan ? esc(u.plan) + ": " : ""}${u.status === "done" ? `${u.reels.length} reel${u.reels.length === 1 ? "" : "s"} made` : u.status === "retrying" ? "trying again on the next visit" : esc(u.note || u.status)}, ${ago(u.at)}</div></div></li>`).join("");
   return `
     ${trackHtml(st)}
     <div style="margin-top:22px">
@@ -641,7 +726,8 @@ function settingsView() {
         <div class="switch"><div>Pick the best posting times for me<br><span class="small muted">From when top posts go live, then from when your followers are online.</span></div><input type="checkbox" name="auto_times" ${s.auto_times ? "checked" : ""}></div>
         <div id="timesBox" ${s.auto_times ? "hidden" : ""}><div class="row">${[0, 1, 2].map((i) => `<label class="f">Time ${i + 1}<input type="time" name="t${i}" value="${esc(s.post_times[i] || "")}"></label>`).join("")}</div></div>
         <div class="switch"><div>Answer comments<br><span class="small muted">Replies to real comments, hides abusive ones.</span></div><input type="checkbox" name="reply" ${s.reply_to_comments ? "checked" : ""}></div>
-        <div class="switch"><div>Music from Instagram<br><span class="small muted">Picks a trending Instagram song for each reel (needs Instagram connected). Otherwise the agent makes a beat for it.</span></div><input type="checkbox" name="audio" ${s.trending_audio ? "checked" : ""}></div>
+        <div class="switch"><div>Music from Instagram<br><span class="small muted">Picks a trending Instagram song for each reel when Instagram offers songs to apps, and shows you the options.</span></div><input type="checkbox" name="audio" ${s.trending_audio ? "checked" : ""}></div>
+        <div class="switch"><div>The agent's own beats<br><span class="small muted">When Instagram has no song for a reel, the agent makes a beat for it. Off: the reel keeps the game sound and you get song suggestions.</span></div><input type="checkbox" name="beats" ${s.beats ? "checked" : ""}></div>
       </div>
       <button class="btn primary" style="margin-top:14px">Save changes</button>
     </form>
@@ -706,7 +792,7 @@ function chatHtml(c) {
   const msgs = (c.chat || []).map((m) => `<div class="msg ${m.from === "you" ? "you" : "agent"}">${esc(m.text)}<small>${m.from === "you" ? "You" : m.from === "claude" ? "Claude, fixing the agent" : "Agent"}, ${esc(ago(m.at))}</small></div>`).join("");
   const busy = c.editing || S.pending[c.id] === "re-editing";
   return `<h3 style="margin-top:20px">Tell the agent what to change</h3>
-    <p class="small muted" style="margin:4px 0 0">${c.can_reedit === false ? "Its original clip isn't stored any more, so only the caption and hashtags can change." : "For example: \"mute the game sound\", \"music from Instagram\", \"different song\", \"start earlier\", \"sharper picture\", \"use a different moment\". Say \"always\" or \"from now on\" and it applies to every reel."}</p>
+    <p class="small muted" style="margin:4px 0 0">${c.can_reedit === false ? "Its original clip isn't stored any more, so only the caption and hashtags can change." : "For example: \"mute the game sound\", \"music from Instagram\", \"different song\", \"start earlier\", \"sharper picture\", \"use a different moment\", \"no music\". Say \"always\" or \"from now on\" and it applies to every reel."}</p>
     ${msgs ? `<div class="chat">${msgs}</div>` : ""}
     ${busy ? `<div class="editing"><span class="spin"></span>The agent is re-editing this reel. The new version shows up here in a few minutes.</div>`
            : `<form id="noteForm" class="composer"><textarea name="t" rows="2" placeholder="What should be different?" required></textarea>
@@ -722,9 +808,11 @@ async function openClip(id) {
     <h3 style="font-size:24px;margin:4px 46px 10px 0">${esc(c.hook)}</h3>
     <div class="player" id="player">${c.cover ? `<img alt="" src="${esc(rawUrl(c.cover))}">` : ""}</div>
     <div><span class="chip k">${esc(c.game_name)}</span><span class="chip k">${esc(c.style_name || c.style)}</span>${c.look ? `<span class="chip k">${esc(c.look)} grade</span>` : ""}${c.seconds ? `<span class="chip k">${Math.round(c.seconds)} s</span>` : ""}${c.version > 1 ? `<span class="chip k">version ${c.version}</span>` : ""}${c.sound ? `<span class="chip k">${esc(c.sound)}</span>` : ""}</div>
-    <p class="small ink2" style="margin-top:8px">${c.ig_sound ? `Music: “${esc(c.ig_sound.title)}”${c.ig_sound.artist ? ` by ${esc(c.ig_sound.artist)}` : ""} from Instagram. Instagram adds it when the reel is posted, so this preview plays without it.`
+    ${c.asked ? `<p class="small muted" style="margin-top:8px">You asked for: ${esc(c.asked)}</p>` : ""}
+    <p class="small ink2" style="margin-top:8px">${c.ig_sound ? `Song: “${esc(c.ig_sound.title)}”${c.ig_sound.artist ? ` by ${esc(c.ig_sound.artist)}` : ""} from Instagram. Instagram adds it when the reel is posted, so this preview plays without it.`
       : c.sound === "a beat made for it" ? "Music: a beat the agent made for this reel, with the drop on the big moment."
       : c.sound === "voiceover" ? "Sound: AI voiceover over the game sound." : c.sound ? `Music: ${esc(c.sound)}.` : "Sound: game sound only."}</p>
+    ${(waiting || queued) && !c.editing ? songHtml(c) : ""}
     ${c.error ? `<p class="small err">Last try: ${esc(c.error)}</p>` : ""}
     ${waiting && !c.editing ? `<div class="panel" style="margin-top:12px"><h3>Post this reel?</h3>
         <p class="small ink2" style="margin:0 0 12px">Nothing goes to Instagram until you say so.</p>
@@ -771,6 +859,25 @@ async function openClip(id) {
       const p = $("#player"); if (p) p.innerHTML = `<video src="${url}" controls playsinline loop preload="auto" poster="${esc(rawUrl(c.cover))}?v=${c.version || 1}"></video>`;
     } catch (e) {}
   }
+}
+function songHtml(c) {
+  S.copy = S.copy || [];
+  const opts = (c.song_options || []).filter((o) => !c.ig_sound || o.audio_id !== c.ig_sound.audio_id);
+  if (opts.length) return `<h3 style="margin-top:18px">${c.ig_sound ? "Other songs from Instagram" : "Pick a song from Instagram"}</h3>
+    ${opts.map((o) => `<div class="song"><div><b>${esc(o.title)}</b><small>${esc(o.artist || "Instagram")}${o.link ? ` · <a href="${esc(o.link)}" target="_blank" rel="noopener">listen</a>` : ""}</small></div>
+      <button class="btn slim" data-act="song" data-id="${esc(c.id)}" data-audio="${esc(o.audio_id)}">Use this</button></div>`).join("")}
+    <p class="small muted" style="margin-top:6px">Instagram attaches the song when the agent posts the reel.</p>`;
+  if (c.ig_sound) return "";
+  const ideas = (c.song_ideas || []).map((x) => { S.copy.push(`${x.title}${x.artist ? " " + x.artist : ""}`); return `<div class="song"><div><b>${esc(x.title)}</b><small>${esc(x.artist || "")}${x.why ? ` · ${esc(x.why)}` : ""}</small></div>
+      <button class="btn slim" data-act="copy" data-i="${S.copy.length - 1}">Copy</button></div>`; }).join("");
+  return `<h3 style="margin-top:18px">Add a song from Instagram</h3>
+    <p class="small ink2" style="margin-top:4px">Instagram isn't giving the agent its song library for your account right now, so the agent can't attach one itself. ${ideas ? "These songs fit this reel and are trending on Reels this week:" : "The agent's trend research suggests songs here once it has run today."}</p>
+    ${ideas}
+    <details style="margin-top:10px"><summary>Post it myself with a song</summary><ol class="how">
+      <li>Tap <b>Download</b>, then <b>Share</b> → <b>Save Video</b>.${c.music_baked ? " (This version has the agent's music on it. Tell the agent \"no music\" first if you'll add a song.)" : ""}</li>
+      <li>In Instagram: <b>+</b> → <b>Reel</b>, pick the video, tap <b>Add audio</b>, search the song, paste the caption (Copy caption), then post.</li>
+      <li>Back here, tap <b>I posted it</b> so the agent doesn't post it again.</li></ol>
+      <div class="row">${c.download ? `<a class="btn slim" href="${esc(c.download)}" target="_blank" rel="noopener">Download</a>` : ""}<button class="btn slim ghost" data-act="capCopy" data-id="${esc(c.id)}">Copy caption</button><button class="btn slim ghost" data-act="ownPost" data-id="${esc(c.id)}">I posted it</button></div></details>`;
 }
 function keySheet(kind) {
   const info = {
@@ -869,7 +976,7 @@ function bindSettings() {
       const times = [pf.t0.value, pf.t1.value, pf.t2.value].filter(Boolean).sort();
       const data = { handle, timezone: pf.timezone.value, autopilot: { paused: pf.paused.checked }, review: { require_approval: pf.approval.checked },
         schedule: { max_per_day: +pf.max_per_day.value, auto_times: pf.auto_times.checked, ...(times.length && !pf.auto_times.checked ? { post_times: times } : {}) },
-        clips: { per_video: +pf.per_video.value }, engagement: { reply_to_comments: pf.reply.checked }, instagram: { trending_audio: pf.audio.checked } };
+        clips: { per_video: +pf.per_video.value }, engagement: { reply_to_comments: pf.reply.checked }, instagram: { trending_audio: pf.audio.checked }, music: { generate: pf.beats.checked } };
       try { await sendCommand({ type: "settings", data }); toast("Saved. The agent picks it up on its next visit."); poll(true); } catch (x) { toast(x.message); }
       b.disabled = false;
     });
@@ -910,6 +1017,24 @@ document.addEventListener("click", async (e) => {
     try { await navigator.clipboard.writeText(text); toast("Copied. Paste it in Instagram's Edit profile."); }
     catch (x) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Copied"); }
   }
+  else if (act === "song") {
+    t.disabled = true;
+    try { await sendCommand({ type: "song", id: t.dataset.id, audio_id: t.dataset.audio }); S.pending[t.dataset.id] = "re-editing";
+      toast("Song picked. The agent sets it on the reel now."); closeSheet(); poll(true); }
+    catch (x) { toast(x.message); t.disabled = false; }
+  }
+  else if (act === "capCopy") {
+    const c = [...(S.status.awaiting || []), ...S.status.queue].find((x) => x.id === t.dataset.id); if (!c) return;
+    const text = `${c.caption}\n\n${(c.hashtags || []).join(" ")}`.trim();
+    try { await navigator.clipboard.writeText(text); } catch (x) {}
+    toast("Caption copied");
+  }
+  else if (act === "ownPost") {
+    if (!confirm("Mark this reel as posted by you? The agent won't post it.")) return;
+    t.disabled = true;
+    try { await sendCommand({ type: "mark_posted", id: t.dataset.id }); S.pending[t.dataset.id] = "posted"; closeSheet(); toast("Marked as posted"); poll(true); }
+    catch (x) { toast(x.message); t.disabled = false; }
+  }
   else if (act === "fixDone") { localStorage.setItem("ra_fix_" + t.dataset.id, "1"); profileSheet(); render(); }
   else if (act === "profileCheck") {
     t.disabled = true;
@@ -922,7 +1047,7 @@ document.addEventListener("click", async (e) => {
   else if (act === "signOut") { if (confirm("Remove the GitHub key from this phone? The agent keeps running; this app just can't control it until you connect again.")) { localStorage.removeItem("ra_token"); S.token = ""; S.status = null; render(); } }
 });
 document.addEventListener("change", (e) => { if (e.target.name === "game") localStorage.setItem("ra_game", e.target.value); });
-$("#picker").addEventListener("change", (e) => { const files = [...e.target.files]; e.target.value = ""; startUpload(files); });
+$("#picker").addEventListener("change", (e) => { const files = [...e.target.files]; e.target.value = ""; if (files.length) planSheet(files); });
 document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.id === "addBtn") { e.preventDefault(); $("#picker").click(); } if (e.key === "Escape") closeSheet(); });
 
 let pollTimer = null, polling = false;
@@ -970,6 +1095,8 @@ function demoStatus() {
       all_styles: { classic: "Classic", slowmo: "Slow motion", replay: "Instant replay", freeze: "Freeze frame", meme_bar: "Meme caption", pov: "POV", top3: "Top 3 countdown", montage: "Montage" } },
     approval: true,
     awaiting: [clip("cod-0013", "cod", "Call of Duty", "ONE MAG, FOUR DOWN", "replay", "Instant replay", { status: "ready", version: 2, can_reedit: true,
+        asked: "Highlight video, 1 min, game sound only", download: "https://github.com/", song_options: [],
+        song_ideas: [{ title: "Example Phonk Song", artist: "Some Artist", why: "used under many gaming edits this week" }, { title: "Another Track", artist: "Producer", why: "trending on clutch clips" }],
         chat: [{ from: "you", text: "The title is too small and it starts too late", at: new Date(Date.now() - 18 * 6e4).toISOString() },
                { from: "agent", text: "Done: bigger text, starts 4s earlier.", at: new Date(Date.now() - 11 * 6e4).toISOString() }] }),
       clip("gta6-0009", "gta6", "GTA 6", "WAIT FOR THE BRIDGE", "classic", "Classic", { status: "ready", version: 1, can_reedit: true, chat: [] })],

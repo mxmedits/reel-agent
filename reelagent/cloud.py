@@ -337,6 +337,19 @@ def apply_commands(cfg, db, log) -> dict:
             elif kind == "skip" and row and row["status"] != "posted":
                 db.update(cid, status="rejected")
                 log(f"⏭ {cid} skipped from the app")
+            elif kind == "song" and row and row["status"] != "posted":
+                opts = copy_of(row).get("ig_audio_options") or []
+                pick = next((o for o in opts if str(o.get("audio_id")) == str(cmd.get("audio_id"))), None)
+                if pick:
+                    db.update(cid, copy_json={**copy_of(row), "editing": True})
+                    result["feedback"].append((cid, {"song": pick}))
+                    log(f"🎵 {cid}: you picked \"{pick.get('title', '')}\"")
+            elif kind == "mark_posted" and row and row["status"] != "posted":
+                url = str(cmd.get("url") or "").strip()
+                db.update(cid, status="posted", posted_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                          ig_url=url if url.startswith("https://www.instagram.com/") else "", ig_status="by_owner",
+                          copy_json={**copy_of(row), "posted_by_owner": True})
+                log(f"📲 {cid} posted by you from the Instagram app")
             elif kind == "profile":
                 from . import profile
                 profile.flag(cfg).write_text("1", encoding="utf-8")
@@ -367,6 +380,78 @@ def apply_commands(cfg, db, log) -> dict:
 def inbox_refs() -> list[str]:
     out = git(["ls-remote", "--heads", remote_url(), f"{INBOX_PREFIX}*"], cwd=ROOT, check=False).stdout
     return sorted(l.split("refs/heads/", 1)[1].strip() for l in out.splitlines() if "refs/heads/" in l)
+
+
+GROUP_RE = re.compile(r"^inbox/g-(?P<gid>[0-9a-z-]+?)-(?P<k>\d+)of(?P<n>\d+)$")
+
+
+def batches(refs: list[str], hist: dict, log, wait_hours: float = 3.0) -> list[list[str]]:
+    """Each upload on its own, except clips the owner added together as one session ("edit them together"):
+    those come as one list, in order, once every part has arrived (or after a few hours with what came)."""
+    out, groups = [], {}
+    for r in refs:
+        m = GROUP_RE.match(r)
+        if m:
+            groups.setdefault(m["gid"], {})[int(m["k"])] = (r, int(m["n"]))
+        else:
+            out.append([r])
+    for gid, parts in groups.items():
+        n = max(v[1] for v in parts.values())
+        seen = hist.setdefault(f"group:{gid}", {"first_seen": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(seen["first_seen"])).total_seconds() / 3600
+        if len(parts) >= n or age >= wait_hours:
+            out.append([parts[k][0] for k in sorted(parts)])
+        else:
+            log(f"⏳ waiting for the rest of a session you added together ({len(parts)} of {n} clips arrived)")
+    return out
+
+
+def join_clips(paths: list[Path], out: Path, log) -> Path:
+    """Put the clips of one session end to end. Same camera settings: joined without re-encoding (no quality
+    lost). Otherwise each is scaled to the first one's size and re-encoded once."""
+    from . import media
+    infos = [media.probe(p) for p in paths]
+
+    def sig(p):
+        rc, so, _ = media.capture(["ffprobe", "-v", "error", "-show_entries",
+                                   "stream=codec_type,codec_name,width,height,r_frame_rate,pix_fmt,sample_rate,channels,"
+                                   "color_transfer", "-of", "compact", str(p)])
+        return so.strip() if rc == 0 else str(p)
+    lst = out.parent / f"{out.stem}_list.txt"
+    if len({sig(p) for p in paths}) == 1:
+        lst.write_text("".join(f"file '{p.resolve()}'\n" for p in paths), encoding="utf-8")
+        try:
+            media.run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-map", "0",
+                       "-c", "copy", "-movflags", "+faststart", str(out)])
+            got = media.probe(out).duration
+            want = sum(i.duration for i in infos)
+            if abs(got - want) <= max(2.0, 0.02 * want):
+                log(f"  🔗 joined {len(paths)} clips ({want / 60:.1f} min) without re-encoding")
+                return out
+        except Exception as e:
+            log(f"  (joining without re-encoding didn't work: {str(e)[:120]}; re-encoding)")
+    w, h = infos[0].width, infos[0].height
+    if max(w, h) > 1920:                                     # keep it fast: 1080p is plenty for a phone screen
+        k = 1920 / max(w, h)
+        w, h = int(w * k) // 2 * 2, int(h * k) // 2 * 2
+    cmd, chains, ins = ["ffmpeg", "-y", "-v", "error"], [], 0
+    for p, info in zip(paths, infos):
+        cmd += ["-i", str(p)]
+        tone = media.tonemap_chain(info)
+        chains.append(f"[{ins}:v]{tone + ',' if tone else ''}scale={w}:{h}:force_original_aspect_ratio=decrease,"
+                      f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v{ins}]")
+        if info.has_audio:
+            chains.append(f"[{ins}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a{ins}]")
+        else:
+            chains.append(f"anullsrc=r=48000:cl=stereo,atrim=0:{info.duration:.3f}[a{ins}]")
+        ins += 1
+    chains.append("".join(f"[v{i}][a{i}]" for i in range(ins)) + f"concat=n={ins}:v=1:a=1[v][a]")
+    cmd += media.graph_args(";".join(chains), out.parent, f"{out.stem}_join.txt")
+    cmd += ["-map", "[v]", "-map", "[a]", *media.encode_args(17, "veryfast"), "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)]
+    media.run(cmd)
+    log(f"  🔗 joined {len(paths)} clips ({sum(i.duration for i in infos) / 60:.1f} min), re-encoded to {w}x{h}")
+    return out
 
 
 def fetch_upload(ref: str, work: Path) -> tuple[Path, dict]:
@@ -455,9 +540,12 @@ def answer_notes(cfg, db, gh: GitHub, notes: list, log, events: list) -> None:
             dest = work / name
             sources[name] = dest if gh.download(name, dest) else None
         src = sources.get(name) if name else (Path(row["source"]) if Path(row["source"]).exists() else None)
-        log(f"💬 {cid}: \"{text[:120]}\"")
         before = render_of(row).get("version", 1)
-        reply = revise.handle(cfg, db, cid, text, src)
+        if isinstance(text, dict):
+            reply = revise.use_song(cfg, db, cid, text["song"], src)
+        else:
+            log(f"💬 {cid}: \"{text[:120]}\"")
+            reply = revise.handle(cfg, db, cid, text, src)
         row = db.get(cid)
         copy = copy_of(row)
         copy.pop("editing", None)
@@ -487,16 +575,32 @@ def process_inbox(cfg, db, gh: GitHub, log, events: list) -> None:
     work = Path(tempfile.mkdtemp(prefix="reelagent-"))
     cfg.inbox = work / "inbox"
     cfg.inbox.mkdir(parents=True, exist_ok=True)
-    for ref in refs:
+    from . import request as rq
+    for batch in batches(refs, hist, log):
+        ref = batch[0] if len(batch) == 1 else batch[0].rsplit("-", 1)[0]       # a session: inbox/g-<id>
         h = hist.setdefault(ref, {"name": ref, "attempts": 0})
         h["attempts"] += 1
         h["at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         made, note, done = [], "", True
         try:
-            path, meta = fetch_upload(ref, work)
-            h["name"] = str(meta.get("name") or ref)[:80]
+            if len(batch) == 1:
+                path, meta = fetch_upload(ref, work)
+                h["name"] = str(meta.get("name") or ref)[:80]
+            else:
+                got = [fetch_upload(r, work) for r in batch]
+                meta = got[0][1]
+                names = [str(m.get("name") or "clip") for _, m in got]
+                h["name"] = (f"{len(got)} clips joined: " + " + ".join(names))[:80]
+                if (meta.get("of") or len(got)) > len(got):
+                    log(f"  ! only {len(got)} of {meta.get('of')} clips of the session arrived; joining those")
+                path = join_clips([p for p, _ in got], got[0][0].with_name(f"{ref.split('/')[-1]}_session.mp4"), log)
+                for p, _ in got:
+                    p.unlink(missing_ok=True)
             game = str(meta.get("game") or "auto").lower()
-            made = pipeline.process_file(cfg, db, path, game if game in cfg["games"] and game != "default" else None)
+            plan = rq.clean(meta.get("plan"))
+            h["plan"] = rq.label(plan)
+            made = pipeline.process_file(cfg, db, path, game if game in cfg["games"] and game != "default" else None,
+                                         plan=plan)
             src = db.conn.execute("SELECT * FROM sources WHERE path=?", (str(path.resolve()),)).fetchone()
             if src and src["status"] == "skipped":
                 note = src["note"] or "skipped"
@@ -531,7 +635,8 @@ def process_inbox(cfg, db, gh: GitHub, log, events: list) -> None:
             if done:
                 events.append((f"❌ Could not edit {h.get('name', ref)}", note))
         if done:
-            git(["push", "--quiet", remote_url(), "--delete", f"refs/heads/{ref}"], cwd=ROOT, check=False)
+            for r in batch:
+                git(["push", "--quiet", remote_url(), "--delete", f"refs/heads/{r}"], cwd=ROOT, check=False)
     keep = sorted(hist.items(), key=lambda kv: kv[1].get("at", ""))[-30:]
     hist_file.write_text(json.dumps(dict(keep), indent=1, ensure_ascii=False), encoding="utf-8")
     shutil.rmtree(work, ignore_errors=True)
@@ -622,6 +727,7 @@ def tidy(cfg, db, gh: GitHub) -> None:
 # ── what the app shows ──────────────────────────────────────────────────────
 
 def _clip(cfg, row, insights: dict, eta: str | None = None) -> dict:
+    from . import request as rq
     from .db import copy_of, render_of
     from .formats import FORMATS
     c, r = copy_of(row), render_of(row)
@@ -641,7 +747,16 @@ def _clip(cfg, row, insights: dict, eta: str | None = None) -> dict:
          "sound": (c.get("ig_audio") or c.get("ig_audio_plan") or {}).get("title") or
                   ("a beat made for it" if str(r.get("music") or "").startswith("beat:") else "your music" if r.get("music") else
                                                              "voiceover" if r.get("voice") else None),
-         "what": c.get("what_happens", "")}
+         "what": c.get("what_happens", ""),
+         "song_options": [{k: o.get(k, "") for k in ("audio_id", "title", "artist", "link")}
+                          for o in (c.get("ig_audio_options") or [])[:3]],
+         "song_ideas": c.get("song_ideas") or [],
+         "music_baked": bool(r.get("music")), "by_owner": bool(c.get("posted_by_owner")),
+         "asked": rq.label(c["owner_plan"]) if c.get("owner_plan") else "",
+         "download": f"https://github.com/{repo()}/releases/download/{REELS_TAG}/{row['id']}.mp4" if repo() else None}
+    if r.get("format") == "full" or r.get("style") == "highlight":
+        from .formats import ON_REQUEST
+        d["style_name"] = ON_REQUEST["full" if r.get("format") == "full" else "highlight"]["name"]
     if eta:
         d["eta"] = eta
     if row["status"] == "posted":
@@ -669,7 +784,8 @@ def build_status(cfg, db, account: dict | None, note: str = "") -> dict:
     posted = [r for r in rows if r["status"] == "posted"][-40:][::-1]
     problems = [r for r in rows if r["status"] == "failed"][-10:][::-1]
     try:
-        uploads = list(json.loads((cfg.state_dir / "uploads.json").read_text(encoding="utf-8")).values())[-8:][::-1]
+        uploads = [u for u in json.loads((cfg.state_dir / "uploads.json").read_text(encoding="utf-8")).values()
+                   if u.get("status")][-8:][::-1]
     except Exception:
         uploads = []
     try:
@@ -724,6 +840,7 @@ def build_status(cfg, db, account: dict | None, note: str = "") -> dict:
             "require_approval": bool((cfg.get("review") or {}).get("require_approval", True)),
             "reply_to_comments": bool((cfg.get("engagement") or {}).get("reply_to_comments", True)),
             "trending_audio": bool((cfg.get("instagram") or {}).get("trending_audio", True)),
+            "beats": bool((cfg.get("music") or {}).get("generate", False)),
             "benchmark_pages": (cfg.get("trends") or {}).get("benchmark_pages") or [],
             "games": {k: v.get("name", k) for k, v in cfg["games"].items() if k != "default"},
             "all_styles": {k: v["name"] for k, v in FORMATS.items()},

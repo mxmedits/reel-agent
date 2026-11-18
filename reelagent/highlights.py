@@ -179,3 +179,44 @@ def find_moments(video: Path, info: media.VideoInfo, length: float, count: int,
             break
     chosen.sort(key=lambda m: m.score, reverse=True)
     return chosen
+
+
+def best_window(video: Path, info: media.VideoInfo, length: float, must: list[float] | None = None) -> Moment:
+    """The most exciting continuous stretch of `length` seconds (a "full video" of a longer clip), keeping the
+    times the owner named inside it when they fit."""
+    dur = info.duration
+    curve, avoid = excitement_curve(video, info, detail=True)
+    if dur <= length + 0.5:
+        idx = int(np.argmax(curve - 3 * avoid)) if len(curve) else 0
+        return Moment(peak=round(min(max(idx * WIN + WIN / 2, 1.0), max(dur - 1, 1.0)), 2), start=0.0,
+                      end=round(dur, 2), score=0.0)
+    value = np.clip(curve, 0, None) - 2.0 * avoid
+    w = max(1, int(length / WIN))
+    sums = np.convolve(value, np.ones(w), mode="valid")       # sums[i] = value[i:i+w]
+    starts = np.arange(len(sums)) * WIN
+    ok = np.ones(len(sums), dtype=bool)
+    for t in must or []:
+        keep = (starts <= t - 2) & (starts + length >= t + 2)
+        if (ok & keep).any():
+            ok &= keep
+    i = int(np.argmax(np.where(ok, sums, -np.inf)))
+    start = float(min(starts[i], max(0.0, dur - length)))
+    a, b = int(start / WIN), int((start + length) / WIN)
+    seg = curve[a:b] - 3 * avoid[a:b]
+    peak = start + (int(np.argmax(seg)) * WIN + WIN / 2 if len(seg) else length * 0.6)
+    return Moment(peak=round(peak, 2), start=round(start, 2), end=round(start + length, 2),
+                  score=round(float(sums[i]) / w, 3))
+
+
+def near(video: Path, info: media.VideoInfo, t: float, length: float, curve_avoid=None) -> Moment | None:
+    """A moment of `length` seconds around a time the owner named ("the crash at 1:20")."""
+    dur = info.duration
+    if not 0 <= t <= dur:
+        return None
+    curve, avoid = curve_avoid or excitement_curve(video, info, detail=True)
+    i = int(t / WIN)
+    lo, hi = max(0, i - 8), min(len(curve), i + 9)             # within about 4 s of the time given
+    peak = float((lo + int(np.argmax(curve[lo:hi]))) * WIN + WIN / 2) if hi > lo else t
+    start = _place(peak, length, dur, avoid) if len(avoid) else max(0.0, peak - length * 0.6)
+    return Moment(peak=round(peak, 2), start=round(start, 2), end=round(min(dur, start + length), 2),
+                  score=round(float(curve[min(i, len(curve) - 1)]) if len(curve) else 0.0, 3) + 5.0)

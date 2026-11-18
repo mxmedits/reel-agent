@@ -164,8 +164,9 @@ def _every(db: DB, job: str, minutes: float) -> bool:
 def trends_job(cfg, db: DB, log=pipeline.log) -> None:
     """What's trending this week (daily, needs an AI key)."""
     tcfg = cfg.get("trends") or {}
+    old_brief = "songs" not in (trends.load(cfg).get("music") or {}) and _every(db, "trends", 120)   # research from before song picks
     if tcfg.get("enabled", True) and cfg.ai_available and \
-            _every(db, "trends", float(tcfg.get("refresh_hours", 24)) * 60):
+            (_every(db, "trends", float(tcfg.get("refresh_hours", 24)) * 60) or old_brief):
         try:
             trends.refresh(cfg, log=lambda m: log(m, cfg))
         except Exception as ex:

@@ -48,7 +48,7 @@ clips:
 music:
   library: "./music"         # tracks you have rights to, in mood folders: hype intense epic chill funny suspense
                              # (optional per-game folders win: music/gta6/hype/). Claude picks the mood per clip.
-  generate: true             # no track of yours for a reel? the agent makes a royalty-free beat for it
+  generate: false            # true: when there is no Instagram song and no track of yours, the agent makes a beat
   volume: 0.55               # music level
   game_volume: 0.6           # game sound level while music plays
   sync_drop: true            # line the song's drop up with the clip's big moment

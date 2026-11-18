@@ -425,15 +425,21 @@ def _inset(q: np.ndarray, amount: float = INSET) -> np.ndarray:
 
 
 def _pw(times: np.ndarray, vals: np.ndarray, var: str) -> str:
-    """Piecewise-linear ffmpeg expression of `var` (seconds) through (times, vals)."""
+    """Piecewise-linear ffmpeg expression of `var` (seconds) through (times, vals).
+    Written as a flat sum of pieces, each switched on only inside its own interval, because ffmpeg's
+    expression parser refuses nesting deeper than about 100 (nested if()s broke stretches over ~30 s)."""
     if len(times) == 1 or np.ptp(vals) < 0.5:
         return f"{float(np.mean(vals)):.1f}"
-    expr = f"{vals[-1]:.1f}"
-    for i in range(len(times) - 2, -1, -1):
+    terms = [f"lt({var},{times[0]:.3f})*{vals[0]:.1f}"]
+    for i in range(len(times) - 1):
         t0, t1, v0, v1 = times[i], times[i + 1], vals[i], vals[i + 1]
-        seg = f"{v0:.1f}+({v1 - v0:.2f})*({var}-{t0:.3f})/{t1 - t0:.3f}"
-        expr = f"if(lt({var},{t1:.3f}),{seg},{expr})"
-    return f"if(lt({var},{times[0]:.3f}),{vals[0]:.1f},{expr})"
+        if abs(v1 - v0) < 0.05:
+            piece = f"{v0:.1f}"
+        else:
+            piece = f"({v0:.1f}+({v1 - v0:.2f})*({var}-{t0:.3f})/{t1 - t0:.3f})"
+        terms.append(f"gte({var},{t0:.3f})*lt({var},{t1:.3f})*{piece}")
+    terms.append(f"gte({var},{times[-1]:.3f})*{vals[-1]:.1f}")
+    return "+".join(terms)
 
 
 def segment_filter(path, info, track: Track, start: float, dur: float, fps: int = 30,
@@ -453,7 +459,8 @@ def segment_filter(path, info, track: Track, start: float, dur: float, fps: int 
     fine = _track(path, info, FINE_FPS, 480, start, dur)
     sm = _fill_and_smooth(fine.times - start, fine.quads, fine.found, fallback, sigma=1.3)
     # keyframes at KEY_FPS over the smoothed track
-    kt = np.arange(0.0, dur + 1e-6, 1.0 / KEY_FPS)
+    key_fps = min(KEY_FPS, 400.0 / max(dur, 1.0))       # long videos: fewer keys (the track is smoothed anyway)
+    kt = np.arange(0.0, dur + 1e-6, 1.0 / key_fps)
     ft = fine.times - start
     keys = np.empty((len(kt), 4, 2))
     for c in range(4):

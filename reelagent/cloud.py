@@ -52,6 +52,10 @@ GITIGNORE = """# the agent's records. Never keys, never full-size videos.
 inbox/
 music/
 output/clips/*/reel.mp4
+output/clips/*/reel_ig*.mp4
+output/sources/
+*.mov
+*.mkv
 output/clips/*/voiceover.wav
 output/clips/*/voiceover.raw.wav
 output/clips/*/beat.wav
@@ -236,6 +240,14 @@ def push_data(home: Path, message: str, squash: bool = False) -> bool:
         if still:
             raise RuntimeError(f"refusing to save: a key was found in {', '.join(still[:3])}")
     git(["add", "-A"], cwd=home)
+    # GitHub refuses files over 100 MB, and one would block every save after it: never commit a big file
+    staged = git(["diff", "--cached", "--name-only", "--diff-filter=AM"], cwd=home, check=False).stdout.split("\n")
+    for rel in filter(None, staged):
+        f = home / rel
+        if f.is_file() and f.stat().st_size > 40 * 1024 * 1024:
+            git(["rm", "--cached", "--quiet", rel], cwd=home, check=False)
+            with open(home / ".git" / "info" / "exclude", "a", encoding="utf-8") as ex:
+                ex.write(rel + "\n")
     if git(["diff", "--cached", "--quiet"], cwd=home, check=False).returncode == 0:
         return False
     git(["commit", "--quiet", "-m", message], cwd=home)
@@ -694,10 +706,10 @@ def remake_missing(cfg, db, gh: GitHub, row, log) -> bool:
     from . import revise
     from .db import copy_of, render_of
     asset = render_of(row).get("source_asset")
-    if not asset:
+    if not asset or not ensure_ffmpeg(log):
         return False
-    src = cfg.output / "sources" / asset
-    if not src.exists() and not gh.download(asset, src):
+    src = Path(tempfile.mkdtemp(prefix="reelagent-src-")) / asset          # never inside the records folder
+    if not gh.download(asset, src):
         return False
     log(f"🔁 {row['id']}: the edited file was gone, editing it again from your original clip")
     approved = copy_of(row).get("approved")
@@ -706,12 +718,14 @@ def remake_missing(cfg, db, gh: GitHub, row, log) -> bool:
     copy["approved"] = approved
     db.update(row["id"], copy_json=copy, status=row["status"])
     store_reel(cfg, db, gh, row["id"], log)
+    shutil.rmtree(src.parent, ignore_errors=True)
     return ensure_reel(cfg, db, gh, db.get(row["id"]))
 
 
 def post_one(cfg, db, gh: GitHub, row, log, events: list) -> bool:
     from . import autopilot
     from .db import copy_of
+    ensure_ffmpeg(log)                      # the file is checked against Instagram's spec before upload
     if not ensure_reel(cfg, db, gh, row) and not remake_missing(cfg, db, gh, row, log):
         db.update(row["id"], status="failed", error="the edited reel file is missing; add the clip again")
         return False

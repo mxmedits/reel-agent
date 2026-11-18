@@ -23,13 +23,14 @@ Any type can end on an end card (a question on a dimmed last second) to pull com
 """
 from __future__ import annotations
 
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import looks as lk
-from . import media
+from . import media, screen
 
 W, H = 1080, 1920
 TEASER_PRE, TEASER_POST = 0.9, 0.7
@@ -66,6 +67,7 @@ class RenderSpec:
     freeze_line: str = ""              # label on the freeze frame
     end_card: str = ""                 # question shown on the dimmed last second ("RATE THIS /10")
     cut_seconds: float = 2.0           # montage cut length (learned from top reels)
+    text_scale: float = 1.0            # all on-screen text bigger (>1) or smaller (<1)
 
 
 STYLES = ("classic", "slowmo", "meme_bar", "pov", "replay", "freeze", "top3", "montage")
@@ -138,16 +140,16 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Hook,{font},112,&H00FFFFFF,&H000000FF,&H00000000,&H78000000,-1,0,0,0,100,100,1,0,1,7,3,8,100,230,320,1
-Style: Sub,{font},96,&H00FFFFFF,&H000000FF,&H00000000,&H78000000,-1,0,0,0,100,100,1,0,1,6,2,2,100,230,500,1
-Style: Handle,{font},40,&H40FFFFFF,&H000000FF,&H90000000,&H00000000,-1,0,0,0,100,100,3,0,1,2,0,8,100,230,250,1
-Style: HookBar,{font},80,&H00141414,&H000000FF,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,1,0,0,5,80,80,0,1
-Style: HandleBar,{font},32,&H00808080,&H000000FF,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,2,0,1,0,0,8,80,80,30,1
-Style: Pov,{font},70,&H00FFFFFF,&H000000FF,&H46101010,&H46101010,0,0,0,0,100,100,1,0,3,18,0,8,110,240,330,1
-Style: Badge,{font},58,&H00FFFFFF,&H000000FF,&H003C32F0,&H003C32F0,0,0,0,0,100,100,3,0,3,14,0,7,96,230,330,1
-Style: Rank,{font},210,&H0000E6FF,&H000000FF,&H00000000,&H78000000,0,0,0,0,100,100,0,0,1,9,4,7,90,230,300,1
-Style: Label,{font},108,&H0000E6FF,&H000000FF,&H00000000,&H78000000,0,0,0,0,100,100,1,0,1,8,3,5,100,230,0,1
-Style: EndCard,{font},124,&H00FFFFFF,&H000000FF,&H00000000,&H78000000,0,0,0,0,100,100,1,0,1,8,3,5,100,230,0,1
+Style: Hook,{font},172,&H00FFFFFF,&H000000FF,&H00000000,&H78000000,-1,0,0,0,100,100,1,0,1,7,3,8,100,230,320,1
+Style: Sub,{font},128,&H00FFFFFF,&H000000FF,&H00000000,&H78000000,-1,0,0,0,100,100,1,0,1,6,2,2,100,230,500,1
+Style: Handle,{font},48,&H40FFFFFF,&H000000FF,&H90000000,&H00000000,-1,0,0,0,100,100,3,0,1,2,0,8,100,230,250,1
+Style: HookBar,{font},104,&H00141414,&H000000FF,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,0,0,1,0,0,5,80,80,0,1
+Style: HandleBar,{font},40,&H00808080,&H000000FF,&H00FFFFFF,&H00FFFFFF,-1,0,0,0,100,100,2,0,1,0,0,8,80,80,30,1
+Style: Pov,{font},88,&H00FFFFFF,&H000000FF,&H46101010,&H46101010,0,0,0,0,100,100,1,0,3,18,0,8,110,240,330,1
+Style: Badge,{font},72,&H00FFFFFF,&H000000FF,&H003C32F0,&H003C32F0,0,0,0,0,100,100,3,0,3,14,0,7,124,230,330,1
+Style: Rank,{font},270,&H0000E6FF,&H000000FF,&H00000000,&H78000000,0,0,0,0,100,100,0,0,1,9,4,7,90,230,300,1
+Style: Label,{font},150,&H0000E6FF,&H000000FF,&H00000000,&H78000000,0,0,0,0,100,100,1,0,1,8,3,5,100,230,0,1
+Style: EndCard,{font},170,&H00FFFFFF,&H000000FF,&H00000000,&H78000000,0,0,0,0,100,100,1,0,1,8,3,5,100,230,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -172,16 +174,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if handle:
             ev.append(f"Dialogue: 0,{_ts(0)},{_ts(duration)},Handle,,0,0,0,,{_clean(handle)}")
         if hook and hook_until > 0:
-            ev.append(f"Dialogue: 2,{_ts(0)},{_ts(min(hook_until, duration))},Hook,,0,0,0,,{pop}{_wrap(hook.upper(), 16)}")
+            ev.append(f"Dialogue: 2,{_ts(0)},{_ts(min(hook_until, duration))},Hook,,0,0,0,,{pop}{_wrap(hook.upper(), 14)}")
     if seg is not None:
         hook_on = hook_until > 0 and style not in ("meme_bar", "pov")
         if seg.rank:   # the countdown number sits under the hook while the hook is up
-            y = 620 if hook_on else 300
-            ev.append(f"Dialogue: 3,{_ts(0)},{_ts(duration)},Rank,,0,0,0,,{{\\pos(90,{y})}}{pop}{_clean(seg.rank)}")
+            y = 640 if hook_on else 300
+            ev.append(f"Dialogue: 3,{_ts(0)},{_ts(duration)},Rank,,0,0,0,,{{\\pos(112,{y})}}{pop}{_clean(seg.rank)}")
         if seg.badge:
             ev.append(f"Dialogue: 3,{_ts(0)},{_ts(duration)},Badge,,0,0,0,,{{\\fad(80,0)}}{_clean(seg.badge).upper()}")
         if seg.label:
-            ev.append(f"Dialogue: 3,{_ts(0.05)},{_ts(duration)},Label,,0,0,0,,{{\\pos(480,600)}}{pop}"
+            ev.append(f"Dialogue: 3,{_ts(0.05)},{_ts(duration)},Label,,0,0,0,,{{\\pos(480,740)}}{pop}"
                       f"{_wrap(seg.label.upper(), 15)}")
         if seg.end_card:
             ev.append(f"Dialogue: 4,{_ts(seg.end_card_at)},{_ts(duration)},EndCard,,0,0,0,,{{\\pos(480,860)}}{pop}"
@@ -202,6 +204,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 parts.append(r"{\c&H0000E6FF&}" + txt + r"{\c&H00FFFFFF&}" if j == i else txt)
             ev.append(f"Dialogue: 1,{_ts(s)},{_ts(min(e, duration))},Sub,,0,0,0,,{' '.join(parts)}")
     return head + "\n".join(ev) + "\n"
+
+
+def scale_text(ass: str, scale: float) -> str:
+    """Every text style bigger or smaller (the owner's 'bigger text' note)."""
+    if abs(scale - 1.0) < 0.01:
+        return ass
+    return re.sub(r"^(Style: \w+,[^,]+,)(\d+),", lambda m: f"{m.group(1)}{int(round(int(m.group(2)) * scale))},",
+                  ass, flags=re.M)
 
 
 def _chunks(words: list, max_words: int = 3, max_gap: float = 0.6) -> list[list]:
@@ -225,9 +235,10 @@ def _even(x: float) -> int:
 def _video_graph(info: media.VideoInfo, layout: str, dur: float, punch_at: float | None,
                  fps: int, ass_name: str | None, style: str = "classic", slow: tuple | None = None,
                  look: lk.Look | None = None, impact_at: float | None = None,
-                 cut_flash_at: float | None = None, seg: "Seg | None" = None) -> str:
-    """Video graph ending in [vout]. With `slow` or a slow segment, it also builds the audio ([aout])."""
-    sw, sh = info.width, info.height
+                 cut_flash_at: float | None = None, seg: "Seg | None" = None, src_chain: str = "") -> str:
+    """Video graph ending in [vout]. With `slow` or a slow segment, it also builds the audio ([aout]).
+    `src_chain`: filters applied to the source first (HDR fix, straightening a filmed screen)."""
+    sw, sh = info.view_w, info.view_h
     smooth = f"framerate=fps={fps}," if info.fps < 50 and media.has_filter("framerate") else ""
     speed = seg.speed if seg else 1.0
     if slow:   # slow motion on the payoff: video at half speed (60 fps sources stay smooth), audio pitch kept
@@ -303,10 +314,13 @@ def _video_graph(info: media.VideoInfo, layout: str, dur: float, punch_at: float
             g += [
                 f"[{cur}]split=2[bgs][fgs]",
                 f"[bgs]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=8:2,"
-                f"scale={W}:{H},eq=brightness=-0.07:saturation=1.2[bg]",
+                f"scale={W}:{H},eq=brightness=-0.16:saturation=0.95[bg]",
                 f"[fgs]{fg_crop}scale={fw}:{fh}:flags=lanczos[fg]",
                 f"[bg][fg]overlay=(W-w)/2:{y},setsar=1[vl]",
             ]
+    if src_chain:                                     # everything above reads the fixed-up source
+        g = [line.replace("[0:v]", "[v0]") for line in g]
+        g.insert(0, f"[0:v]{src_chain}[v0]")
     last = "vl"
     if look and (look.name != "none" or look.flash or look.shake or look.cut_flash):
         g += lk.canvas_chain(look, "vl", "vfx", W, H, impact_at, cut_flash_at)
@@ -332,19 +346,27 @@ def _render_seg(spec: RenderSpec, seg: Seg, i: int, workdir: Path) -> Path:
     out_dur = seg.out
     ass_name = out.stem + ".ass"
     (workdir / ass_name).write_text(
-        build_ass(spec.font, out_dur, spec.hook, seg.hook_until, spec.handle, seg.words,
-                  style=spec.style, meme_line=spec.meme_line, seg=seg), encoding="utf-8")
+        scale_text(build_ass(spec.font, out_dur, spec.hook, seg.hook_until, spec.handle, seg.words,
+                             style=spec.style, meme_line=spec.meme_line, seg=seg), spec.text_scale), encoding="utf-8")
     cmd = ["ffmpeg", "-y", "-v", "error"]
     audio_in_graph = bool(seg.slow)
+    info = spec.info
+    tonemap = media.tonemap_chain(info)
     if seg.freeze:
         still = workdir / f"p{i}_still.png"
         media.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{max(seg.start, 0):.3f}", "-i", str(spec.source),
-                   "-frames:v", "1", still.name], cwd=workdir)
+                   *(["-vf", tonemap] if tonemap else []), "-frames:v", "1", still.name], cwd=workdir)
         cmd += ["-loop", "1", "-framerate", str(spec.fps), "-t", f"{seg.dur:.3f}", "-i", still.name]
+        src_chain = screen.segment_filter(spec.source, info, info.screen, seg.start, 0.0, spec.fps, still=True) \
+            if info.screen is not None else ""
     else:
         cmd += ["-ss", f"{seg.start:.3f}", "-t", f"{seg.dur:.3f}", "-i", str(spec.source)]
-    graph = _video_graph(spec.info, spec.layout, seg.dur, seg.punch_at, spec.fps, ass_name, spec.style, seg.slow,
-                         spec.look, seg.impact_at, 0.0 if seg.cut_flash else None, seg=seg)
+        parts = [tonemap]
+        if info.screen is not None:
+            parts.append(screen.segment_filter(spec.source, info, info.screen, seg.start, seg.dur, spec.fps))
+        src_chain = ",".join(x for x in parts if x)
+    graph = _video_graph(info, spec.layout, seg.dur, seg.punch_at, spec.fps, ass_name, spec.style, seg.slow,
+                         spec.look, seg.impact_at, 0.0 if seg.cut_flash else None, seg=seg, src_chain=src_chain)
     if not audio_in_graph:
         fmt = "aresample=48000,aformat=channel_layouts=stereo"
         if spec.info.has_audio and not seg.freeze:

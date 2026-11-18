@@ -7,9 +7,9 @@ import time
 from datetime import date, datetime
 from pathlib import Path
 
-from . import captions, editor, formats, highlights, looks, media, scout, transcribe, voiceover
+from . import captions, editor, formats, highlights, looks, media, scout, screen, transcribe, voiceover
 from . import music as mus
-from .db import DB
+from .db import DB, copy_of
 
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi", ".ts", ".flv"}
 
@@ -47,10 +47,26 @@ def new_recordings(cfg, db: DB, settle_seconds: int = 60) -> list[Path]:
     return out
 
 
+def see(cfg, path: Path, info) -> None:
+    """Check whether the clip was filmed off a TV with a phone, and remember it for every later step."""
+    try:
+        tr = screen.analyse(path, info, cfg)
+        info.screen = tr if tr is not None and tr.filmed else None
+    except Exception as e:                                   # never let the check stop an edit
+        log(f"  (screen check skipped: {e})", cfg)
+        info.screen = None
+    captions._VIEW[str(path)] = info
+
+
+def recent_hooks(db: DB, n: int = 12) -> list[str]:
+    return [copy_of(r).get("hook_text", "") for r in db.clips()[-n:]]
+
+
 def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
     path = path.resolve()
     media.require_ffmpeg()
     info = media.probe(path)
+    see(cfg, path, info)
     game = game or cfg.detect_game(path)
     if game == "default" and cfg.ai_available:      # shared from Photos as IMG_1234.MOV: let the AI look
         seen = captions.detect_game(cfg, path, info)
@@ -61,7 +77,11 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
     game = profile["key"]
     c, rv = cfg["clips"], cfg["review"]
     log(f"▶ {path.name}  [{profile['name']}]  {info.duration / 60:.1f} min, "
-        f"{info.width}x{info.height}{'' if info.has_audio else ', no audio'}", cfg)
+        f"{info.width}x{info.height}{'' if info.has_audio else ', no audio'}"
+        + (", HDR" if info.hdr else ""), cfg)
+    if info.screen is not None:
+        log(f"  📺 filmed off a screen ({'; '.join(info.screen.notes)}): straightening it and cropping the room "
+            f"away, {info.view_w}x{info.view_h}", cfg)
 
     rec_day = datetime.fromtimestamp(path.stat().st_mtime).date()
     if not released(profile, rec_day):
@@ -72,7 +92,8 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
 
     length = formats.reel_length(cfg, game)
     want = int(c["per_video"])
-    moments = highlights.find_moments(path, info, length, count=max(want * 2, want + 2),
+    # with an AI to judge them, offer it more moments so it can turn the weak ones down
+    moments = highlights.find_moments(path, info, length, count=max(want * (3 if cfg.ai_available else 2), want + 2),
                                       min_gap=float(c["min_gap"]))
     log(f"  found {len(moments)} candidate moments" + (f" (reels ~{length:.0f}s, from what top reels run at)"
                                                         if abs(length - float(c["length"])) >= 1 else ""), cfg)
@@ -86,7 +107,8 @@ def process_file(cfg, db: DB, path: Path, game: str | None = None) -> list[str]:
             except Exception as e:
                 log(f"  ! transcription failed: {e}", cfg)
         transcript = " ".join(w["w"] for w in words)
-        copy = captions.write_copy(cfg, path, m, profile, transcript, db.peek_series(game) + len(candidates))
+        copy = captions.write_copy(cfg, path, m, profile, transcript, db.peek_series(game) + len(candidates),
+                                   avoid=recent_hooks(db) + [x[1].get("hook_text", "") for x in candidates])
         verdict = f"quality {copy['quality']}/10"
         if copy.get("what_happens"):
             verdict += f" — {copy['what_happens']}"
@@ -187,20 +209,28 @@ def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: d
                 vwords = voiceover.build(cfg, lines, m.end - m.start, folder / "voiceover.wav")
                 if vwords:
                     voice_wav = folder / "voiceover.wav"
-                    words = words or vwords
+                    if c.get("subtitles", False):      # subtitles only when switched on in settings
+                        words = words or vwords
                     copy["voiceover"] = lines
                     if vcfg.get("disclose_ai_voice", True):
                         copy["instagram_caption"] = copy["instagram_caption"].rstrip() + "\n\nAI voiceover"
             except Exception as e:
                 log(f"  ! voiceover failed ({e}); posting without it", cfg)
 
+    if copy.get("source") == "template":       # no AI: a hook that fits the kind of reel and isn't on a recent one
+        hook = captions.template_hook(profile, style, recent_hooks(db), n)
+        copy["hook_text"], copy["hook_options"] = hook, [hook]
     try:
-        stats = media.tone_stats(path, m.start, m.end - m.start)
+        stats = media.tone_stats(path, m.start, m.end - m.start, pre=info.pre(m.start, m.end))
+        color = media.color_stats(path, m.start, m.end - m.start, pre=info.pre(m.start, m.end)) \
+            if info.screen is not None else None
     except Exception:
-        stats = None
+        stats = color = None
     look = looks.plan(cfg, game, stats, ai_pick=copy.get("look"), impact=copy.get("impact", True) is not False,
-                      graphic=bool(copy.get("graphic_violence")))
+                      graphic=bool(copy.get("graphic_violence")), filmed=info.screen is not None, color=color)
     card = formats.end_card(cfg, game, copy, profile, seed=clip_id) if not voice_wav else ""
+    if not c.get("subtitles", False):
+        words = []                            # no word-by-word subtitles on the video
     spec = editor.RenderSpec(
         source=path, info=info, start=m.start, end=m.end, peak=m.peak,
         layout=profile.get("layout", "blur"), hook=copy["hook_text"], handle=cfg.get("handle", ""),
@@ -211,7 +241,7 @@ def _produce(cfg, db: DB, path: Path, info, profile: dict, game: str, m, copy: d
         voice=voice_wav, style=style, meme_line=str(copy.get("meme_line") or ""),
         look=look, encoder=c.get("encoder", "auto"),
         moments=extra_moments, freeze_line=str(copy.get("freeze_line") or ""), end_card=card,
-        cut_seconds=formats.cut_seconds(cfg, game),
+        cut_seconds=formats.cut_seconds(cfg, game), text_scale=float(c.get("text_scale", 1.0)),
     )
     # music: a trending Instagram sound is attached at posting time when that's on; otherwise the library
     # track for the AI's mood, with its drop lined up on the payoff of the finished edit
@@ -270,10 +300,11 @@ def rerender(cfg, db: DB, clip_id: str, hook: str | None = None) -> None:
         raise RuntimeError("the original recording was deleted, so the hook can't be re-rendered "
                            "(turn off 'delete recordings' in Settings to keep originals)")
     info = media.probe(src)
+    see(cfg, src, info)
     c = cfg["clips"]
     spec = editor.RenderSpec(source=src, info=info, start=row["start"], end=row["end"], peak=row["peak"],
                              layout=rmeta.get("layout", "blur"), hook=copy["hook_text"],
-                             handle=cfg.get("handle", ""), words=rmeta.get("words", []),
+                             handle=cfg.get("handle", ""), words=rmeta.get("words", []) if c.get("subtitles", False) else [],
                              teaser=rmeta.get("teaser", True), punch=bool(c.get("punch_zoom", True)),
                              fps=int(c["fps"]), crf=int(c["crf"]), preset=c.get("preset", "veryfast"),
                              font=c.get("font", "Anton"),
@@ -286,7 +317,9 @@ def rerender(cfg, db: DB, clip_id: str, hook: str | None = None) -> None:
                              style=rmeta.get("style", "classic"), meme_line=str(copy.get("meme_line") or ""),
                              moments=rmeta.get("moments") or [], freeze_line=str(copy.get("freeze_line") or ""),
                              end_card=str(rmeta.get("end_card_text") or ""),
-                             look=looks.plan(cfg, row["game"], media.tone_stats(src, row["start"], row["end"] - row["start"]),
+                             look=looks.plan(cfg, row["game"], media.tone_stats(src, row["start"], row["end"] - row["start"],
+                                                                                pre=info.pre(row["start"], row["end"])),
+                                             filmed=info.screen is not None,
                                              ai_pick=(rmeta.get("fx") or {}).get("look") or copy.get("look"),
                                              impact=copy.get("impact", True) is not False,
                                              graphic=bool(copy.get("graphic_violence"))),

@@ -151,6 +151,11 @@ def video_encoder(preferred: str = "auto") -> str:
 
 def encode_args(crf: int = 20, preset: str = "veryfast", encoder: str = "auto") -> list[str]:
     enc = video_encoder(encoder)
+    tags = ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv"]
+    return _enc(enc, crf, preset) + tags
+
+
+def _enc(enc: str, crf: int, preset: str) -> list[str]:
     if enc == "libx264":
         return ["-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-profile:v", "high"]
     if enc == "h264_videotoolbox":     # hardware: fast and cool on iPhone; bitrate-driven
@@ -182,6 +187,30 @@ class VideoInfo:
     height: int
     fps: float
     has_audio: bool
+    transfer: str = ""          # colour transfer, e.g. arib-std-b67 (HLG, iPhone HDR) or smpte2084 (PQ)
+    screen: object = None       # screen.Track when the clip was filmed off a TV / monitor
+
+    @property
+    def hdr(self) -> bool:
+        return self.transfer in ("arib-std-b67", "smpte2084")
+
+    @property
+    def view_w(self) -> int:
+        """Width of the picture the reel is cut from (the straightened screen, if filmed off one)."""
+        return self.screen.out_w if self.screen is not None else self.width
+
+    @property
+    def view_h(self) -> int:
+        return self.screen.out_h if self.screen is not None else self.height
+
+    def pre(self, t0: float | None = None, t1: float | None = None) -> str:
+        """Filters for analysis passes: HDR fixed, and only the screen when filmed off one."""
+        from . import screen as _screen
+        parts = [tonemap_chain(self)]
+        if self.screen is not None:
+            parts.append(_screen.static_filter(self.screen, t0, t1))
+            parts.append(f"scale={self.view_w}:{self.view_h}")
+        return ",".join(p for p in parts if p)
 
 
 def _probe_ffprobe(path: Path) -> VideoInfo:
@@ -204,7 +233,7 @@ def _probe_ffprobe(path: Path) -> VideoInfo:
             rot = abs(int(sd["rotation"]))
     if rot in (90, 270):
         w, h = h, w
-    return VideoInfo(path, dur, w, h, fps, has_audio)
+    return VideoInfo(path, dur, w, h, fps, has_audio, str(v.get("color_transfer") or ""))
 
 
 def _probe_ffmpeg(path: Path) -> VideoInfo:
@@ -224,7 +253,8 @@ def _probe_ffmpeg(path: Path) -> VideoInfo:
     rot = re.search(r"rotation of\s*(-?[\d.]+)|rotate\s*:\s*(-?\d+)", err)
     if rot and abs(int(float(rot.group(1) or rot.group(2)))) in (90, 270):
         w, h = h, w
-    return VideoInfo(path, dur, w, h, fps, "Audio:" in err)
+    tr = "arib-std-b67" if "arib-std-b67" in vline else "smpte2084" if "smpte2084" in vline else ""
+    return VideoInfo(path, dur, w, h, fps, "Audio:" in err, tr)
 
 
 def probe(path: Path) -> VideoInfo:
@@ -256,7 +286,19 @@ def audio_rms(path: Path, window: float = 0.5, sr: int = 8000):
     return (20 * np.log10(rms)).astype(np.float32)
 
 
-def _gray_frames(path: Path, fps: float, w: int, h: int, start: float | None = None, dur: float | None = None):
+def tonemap_chain(info: "VideoInfo | None") -> str:
+    """HDR phone video (iPhone records HLG by default) → normal video. Without this it looks grey and flat."""
+    if not info or not info.hdr:
+        return ""
+    if has_filter("zscale") and has_filter("tonemap"):
+        return ("zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,"
+                "zscale=t=bt709:m=bt709:r=tv,format=yuv420p")
+    return "eq=contrast=1.12:saturation=1.25:gamma=0.92"     # rough fallback when zscale isn't built in
+
+
+def rgb_frames(path: Path, fps: float, w: int, h: int, start: float | None = None, dur: float | None = None,
+               pre: str = ""):
+    """Small colour frames as an (n, h, w, 3) uint8 array."""
     with tempfile.TemporaryDirectory() as td:
         raw = Path(td) / "v.raw"
         cmd = ["ffmpeg", "-y", "-v", "error"]
@@ -264,7 +306,32 @@ def _gray_frames(path: Path, fps: float, w: int, h: int, start: float | None = N
             cmd += ["-ss", f"{max(0.0, start):.3f}"]
         if dur is not None:
             cmd += ["-t", f"{dur:.3f}"]
-        cmd += ["-i", str(path), "-an", "-vf", f"fps={fps},scale={w}:{h},format=gray", "-f", "rawvideo", str(raw)]
+        vf = f"fps={fps}," + (pre + "," if pre else "") + f"scale={w}:{h},format=rgb24"
+        cmd += ["-i", str(path), "-an", "-vf", vf, "-f", "rawvideo", str(raw)]
+        _exec(cmd)
+        buf = raw.read_bytes() if raw.exists() else b""
+    arr = np.frombuffer(buf, dtype=np.uint8)
+    n = len(arr) // (w * h * 3)
+    return arr[: n * w * h * 3].reshape(n, h, w, 3)
+
+
+def gray_frames(path: Path, fps: float, w: int, h: int, start: float | None = None, dur: float | None = None,
+                pre: str = ""):
+    """Small grey frames as an (n, h, w) uint8 array. `pre` = filters to run first (tonemap, perspective)."""
+    return _gray_frames(path, fps, w, h, start, dur, pre)
+
+
+def _gray_frames(path: Path, fps: float, w: int, h: int, start: float | None = None, dur: float | None = None,
+                 pre: str = ""):
+    with tempfile.TemporaryDirectory() as td:
+        raw = Path(td) / "v.raw"
+        cmd = ["ffmpeg", "-y", "-v", "error"]
+        if start is not None:
+            cmd += ["-ss", f"{max(0.0, start):.3f}"]
+        if dur is not None:
+            cmd += ["-t", f"{dur:.3f}"]
+        vf = f"fps={fps}," + (pre + "," if pre else "") + f"scale={w}:{h},format=gray"
+        cmd += ["-i", str(path), "-an", "-vf", vf, "-f", "rawvideo", str(raw)]
         _exec(cmd)
         buf = raw.read_bytes() if raw.exists() else b""
     arr = np.frombuffer(buf, dtype=np.uint8)
@@ -272,9 +339,9 @@ def _gray_frames(path: Path, fps: float, w: int, h: int, start: float | None = N
     return arr[: n * w * h].reshape(n, h, w) if n else arr[:0].reshape(0, h, w)
 
 
-def motion_profile(path: Path, fps: float = 2.0):
+def motion_profile(path: Path, fps: float = 2.0, pre: str = ""):
     """Per-sample (1/fps s) motion energy and frame detail (std) from tiny grayscale frames."""
-    frames = _gray_frames(path, fps, 64, 36).astype(np.float32)
+    frames = _gray_frames(path, fps, 64, 36, pre=pre).astype(np.float32)
     n = len(frames)
     if n < 2:
         return np.zeros(max(n, 0)), np.zeros(max(n, 0))
@@ -284,17 +351,37 @@ def motion_profile(path: Path, fps: float = 2.0):
     return motion, detail
 
 
-def tone_stats(path: Path, start: float, dur: float) -> dict:
-    """Brightness of a moment (like Photoshop's histogram): mean, shadows (p2) and highlights (p98), 0-255."""
-    frames = _gray_frames(path, max(1.0, 8 / max(dur, 1.0)), 96, 54, start, dur)
+def tone_stats(path: Path, start: float, dur: float, pre: str = "") -> dict:
+    """Brightness of a moment (like Photoshop's histogram): mean, shadows (p2) and highlights (p98), 0-255.
+    `pre`: filters to run first (tonemap, the straightened screen) so only the game picture is measured."""
+    frames = _gray_frames(path, max(1.0, 8 / max(dur, 1.0)), 96, 54, start, dur, pre)
     if not len(frames):
         return {"mean": 128.0, "p2": 0.0, "p98": 255.0}
     flat = frames.reshape(-1).astype(np.float32)
     return {"mean": float(flat.mean()), "p2": float(np.percentile(flat, 2)), "p98": float(np.percentile(flat, 98))}
 
 
-def grab_frame(path: Path, t: float, out: Path, width: int = 640, vf_extra: str = "") -> Path:
-    vf = f"scale={width}:-2" + (f",{vf_extra}" if vf_extra else "")
+def color_stats(path: Path, start: float, dur: float, pre: str = "") -> dict:
+    """Per-channel black and white points (p1 / p99, 0-255) and means of a moment, for Auto Color."""
+    w, h = 96, 54
+    with tempfile.TemporaryDirectory() as td:
+        raw = Path(td) / "c.raw"
+        vf = f"fps={max(1.0, 8 / max(dur, 1.0))}," + (pre + "," if pre else "") + f"scale={w}:{h},format=rgb24"
+        _exec(["ffmpeg", "-y", "-v", "error", "-ss", f"{max(0.0, start):.3f}", "-t", f"{dur:.3f}", "-i", str(path),
+               "-an", "-vf", vf, "-f", "rawvideo", str(raw)])
+        buf = raw.read_bytes() if raw.exists() else b""
+    px = np.frombuffer(buf[: len(buf) // 3 * 3], dtype=np.uint8).reshape(-1, 3).astype(np.float32)
+    if len(px) < 100:
+        return {}
+    out = {}
+    for i, c in enumerate("rgb"):
+        out[c] = {"p1": float(np.percentile(px[:, i], 1)), "p99": float(np.percentile(px[:, i], 99)),
+                  "mean": float(px[:, i].mean())}
+    return out
+
+
+def grab_frame(path: Path, t: float, out: Path, width: int = 640, vf_extra: str = "", pre: str = "") -> Path:
+    vf = (pre + "," if pre else "") + f"scale={width}:-2" + (f",{vf_extra}" if vf_extra else "")
     run(["ffmpeg", "-y", "-v", "error", "-ss", f"{max(t, 0):.3f}", "-i", str(path), "-frames:v", "1",
          "-vf", vf, "-q:v", "3", str(out)])
     return out

@@ -172,6 +172,16 @@ code.long{white-space:normal;word-break:break-word}
 .sheet .x{float:right;width:38px;height:38px;border-radius:50%;background:var(--raise);font-size:20px;line-height:1}
 .player{aspect-ratio:9/16;max-height:56dvh;margin:6px auto 14px;border-radius:12px;overflow:hidden;background:#000;display:grid;place-items:center}
 .player video,.player img{width:100%;height:100%;object-fit:contain;display:block}
+.chat{display:flex;flex-direction:column;gap:8px;margin:12px 0 4px}
+.msg{max-width:86%;padding:10px 13px;border-radius:16px;font-size:15px;line-height:1.4;white-space:pre-wrap;word-break:break-word}
+.msg.you{align-self:flex-end;background:var(--next);color:#231a05;border-bottom-right-radius:5px}
+.msg.agent{align-self:flex-start;background:var(--raise);border-bottom-left-radius:5px}
+.msg small{display:block;opacity:.65;font-size:12px;margin-top:3px}
+.composer{display:flex;gap:8px;align-items:flex-end;margin-top:8px}
+.composer textarea{flex:1;min-height:52px;max-height:160px;margin:0;padding:12px 14px;border-radius:14px;background:var(--bg);border:1.5px solid var(--line);color:var(--ink);font-size:16px;resize:none}
+.composer .btn{width:auto;min-height:52px;padding:0 18px}
+.editing{display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:12px;background:var(--raise);color:var(--ink2);font-size:14.5px;margin-top:10px}
+.pic .tag.wait{background:var(--live);color:#2a0715}
 #toast{position:fixed;left:50%;bottom:calc(var(--safe-b) + 96px);transform:translateX(-50%);background:var(--ink);color:var(--bg);
   padding:11px 18px;border-radius:12px;font-weight:600;font-size:15px;z-index:20;max-width:88vw;text-align:center}
 .empty{padding:26px 6px;text-align:center;color:var(--ink2)}
@@ -391,8 +401,9 @@ function setState() {
   if (S.working) { cls = "busy"; txt = "Working"; }
   else if (!st) { cls = ""; txt = S.token ? "Starting" : "Not connected"; }
   else if (a.paused) { cls = "paused"; txt = "Paused"; }
+  else if ((st.awaiting || []).length) { cls = "paused"; txt = `${st.awaiting.length} waiting for your OK`; }
   else if (!a.connected) { cls = "off"; txt = "No Instagram yet"; }
-  else { cls = "on"; txt = "On autopilot"; }
+  else { cls = "on"; txt = st.approval ? "Posts what you approve" : "On autopilot"; }
   el.className = `pill ${cls}`; el.lastElementChild.textContent = txt;
 }
 const mins = (hhmm) => { const [h, m] = String(hhmm).split(":").map(Number); return h * 60 + m; };
@@ -447,7 +458,10 @@ function homeView() {
   const st = S.status;
   if (!st) return `<h2>Waking the agent up</h2><p class="ink2">Its first visit hasn't finished yet. This page fills in by itself within a few minutes.</p>
     ${S.err ? `<p class="err">${esc(S.err)}</p>` : ""}<button class="btn" data-act="refresh">Check again</button>`;
-  const games = { auto: "Let the agent tell", ...st.settings.games };
+  const aiOn = st.agent.ai && st.agent.ai !== "none";
+  const games = aiOn ? { auto: "Let the agent tell", ...st.settings.games } : { ...st.settings.games };
+  const picked = localStorage.getItem("ra_game");
+  const pick = picked && games[picked] ? picked : Object.keys(games)[0];
   const next = st.queue[0];
   const up = st.uploads.slice(0, 3).map((u) => `<li><div class="body"><div>${esc(u.name)}</div>
       <div class="small ${u.status === "failed" ? "err" : "muted"}">${u.status === "done" ? `${u.reels.length} reel${u.reels.length === 1 ? "" : "s"} made` : u.status === "retrying" ? "trying again on the next visit" : esc(u.note || u.status)}, ${ago(u.at)}</div></div></li>`).join("");
@@ -456,17 +470,33 @@ function homeView() {
     <div style="margin-top:22px">
       <label class="btn primary" for="picker" role="button" tabindex="0" id="addBtn">Add gameplay</label>
       <div class="seg" role="radiogroup" aria-label="Which game is it?">
-        ${Object.entries(games).map(([k, v], i) => `<label><input type="radio" name="game" value="${esc(k)}" ${i === 0 ? "checked" : ""}><span>${esc(v)}</span></label>`).join("")}
+        ${Object.entries(games).map(([k, v]) => `<label><input type="radio" name="game" value="${esc(k)}" ${k === pick ? "checked" : ""}><span>${esc(v)}</span></label>`).join("")}
       </div>
+      ${aiOn ? "" : `<p class="small muted" style="margin-top:8px">Pick the game. Without the AI key the agent can't recognise it, and captions stay general.</p>`}
+      <details class="small" style="margin-top:10px"><summary>Getting the sharpest reels</summary>
+        <ol class="how">
+          <li><b>Best:</b> the console's own recording. PS5: press Create, save the clip, then download it from the PlayStation App. Xbox: capture, then share from the Xbox app.</li>
+          <li><b>Filming the TV with your phone works too.</b> The agent finds the screen, straightens it and crops the room away. Hold the phone sideways and steady, keep the whole screen in view, and turn off lamps that reflect on it.</li>
+          <li>Longer clips (2 to 10 minutes) give the agent more moments to choose from.</li>
+        </ol></details>
     </div>
     ${uploadPanel()}
     ${setupSteps(st)}
     ${st.note ? `<div class="panel"><h3>The last visit hit a problem</h3><pre class="log">${esc(st.note)}</pre></div>` : ""}
+    ${(st.awaiting || []).length ? `<h2>Waiting for your OK</h2>
+      <p class="small ink2" style="margin-top:-4px">Watch each one. Approve it, or tell the agent what to change.</p>
+      <div class="film">${st.awaiting.map((c) => waitFrame(c)).join("")}</div>` : ""}
     <h2>Up next</h2>
     ${next ? `<div class="film">${st.queue.slice(0, 8).map((c, i) => frameHtml(c, i)).join("")}</div>`
-           : `<div class="empty">Nothing is waiting to post. Add gameplay and the agent cuts reels from it.</div>`}
+           : `<div class="empty">${(st.awaiting || []).length ? "Nothing approved yet. Reels you approve line up here for their posting time." : "Nothing is waiting to post. Add gameplay and the agent cuts reels from it."}</div>`}
     ${up ? `<h2>Recent clips you added</h2><ul class="list">${up}</ul>` : ""}
     <p class="small muted" style="margin-top:26px">${S.working ? "The agent is working right now." : `The agent last checked in ${ago(st.updated)}. It visits every 15 minutes.`}</p>`;
+}
+function waitFrame(c) {
+  return `<button class="frame" data-clip="${esc(c.id)}">
+    <div class="pic">${c.cover ? `<img loading="lazy" alt="" src="${esc(rawUrl(c.cover))}">` : ""}
+      <span class="tag wait">${esc(c.editing ? "re-editing" : c.version > 1 ? `version ${c.version}` : "new")}</span></div>
+    <p>${esc(c.hook)}</p></button>`;
 }
 function frameHtml(c, i) {
   return `<button class="frame" data-clip="${esc(c.id)}">
@@ -488,9 +518,15 @@ function reelsView() {
       ${c.url ? `<a class="btn slim ghost" href="${esc(c.url)}" target="_blank" rel="noopener">Open</a>` : ""}</li>`).join("");
   const bad = st.problems.map((c) => `<li><div class="body"><div class="hook">${esc(c.hook)}</div><div class="small err">${esc(c.error || "could not be posted")}</div></div>
       <button class="btn slim" data-cmd="retry" data-id="${esc(c.id)}">Try again</button></li>`).join("");
+  const w = (st.awaiting || []).map((c) => `<button data-clip="${esc(c.id)}">
+      <div class="pic">${c.cover ? `<img loading="lazy" alt="" src="${esc(rawUrl(c.cover))}">` : ""}
+        <span class="tag wait">${esc(c.editing ? "re-editing" : "check it")}</span></div>
+      <div class="hook">${esc(c.hook)}</div>
+      <div class="small muted">${esc(c.style_name)}${c.version > 1 ? `, version ${c.version}` : ""}</div></button>`).join("");
   return `
-    <h2>Up next</h2>
-    ${q ? `<div class="grid">${q}</div>` : `<div class="empty">Nothing is waiting to post. Add gameplay on the Home tab.</div>`}
+    ${w ? `<h2>Waiting for your OK</h2><div class="grid">${w}</div>` : ""}
+    <h2>Approved, up next</h2>
+    ${q ? `<div class="grid">${q}</div>` : `<div class="empty">${w ? "Approve a reel above and it lines up here." : "Nothing is waiting to post. Add gameplay on the Home tab."}</div>`}
     ${bad ? `<h2>Needs a look</h2><ul class="list">${bad}</ul>` : ""}
     <h2>Posted</h2>
     ${posted ? `<p class="small muted">${fmtN(st.totals.posted)} reels, ${fmtN(st.totals.views)} views and ${fmtN(st.totals.shares)} sends in total.</p><ul class="list">${posted}</ul>`
@@ -550,6 +586,7 @@ function settingsView() {
       <div class="row"><label class="f">Reels per day<select name="max_per_day">${[1, 2, 3, 4, 5].map((n) => `<option ${n === s.max_per_day ? "selected" : ""}>${n}</option>`).join("")}</select></label>
         <label class="f">Reels per clip<select name="per_video">${[1, 2, 3, 4, 5].map((n) => `<option ${n === s.per_video ? "selected" : ""}>${n}</option>`).join("")}</select></label></div>
       <div style="margin-top:12px">
+        <div class="switch"><div>Ask me before posting<br><span class="small muted">Every reel waits for your Approve. Off: the agent posts on its own.</span></div><input type="checkbox" name="approval" ${s.require_approval !== false ? "checked" : ""}></div>
         <div class="switch"><div>Pause posting<br><span class="small muted">The agent keeps making reels and holds them.</span></div><input type="checkbox" name="paused" ${a.paused ? "checked" : ""}></div>
         <div class="switch"><div>Pick the best posting times for me<br><span class="small muted">From when top posts go live, then from when your followers are online.</span></div><input type="checkbox" name="auto_times" ${s.auto_times ? "checked" : ""}></div>
         <div id="timesBox" ${s.auto_times ? "hidden" : ""}><div class="row">${[0, 1, 2].map((i) => `<label class="f">Time ${i + 1}<input type="time" name="t${i}" value="${esc(s.post_times[i] || "")}"></label>`).join("")}</div></div>
@@ -607,30 +644,47 @@ function connectView() {
 
 /* ── sheets ─────────────────────────────────────────────────────────────── */
 function openSheet(html, onMount) {
-  closeSheet();
+  closeSheet(true);
   const root = $("#sheetRoot");
   root.innerHTML = `<div class="scrim"><div class="sheet" role="dialog" aria-modal="true"><button class="x" data-act="closeSheet" aria-label="Close">×</button>${html}</div></div>`;
   root.firstElementChild.addEventListener("click", (e) => { if (e.target === root.firstElementChild) closeSheet(); });
   onMount && onMount(root);
 }
-function closeSheet() { const v = $("#sheetRoot video"); if (v && v.src.startsWith("blob:")) URL.revokeObjectURL(v.src); $("#sheetRoot").innerHTML = ""; }
+function closeSheet(keep) { if (!keep) S.openId = null; const v = $("#sheetRoot video"); if (v && v.src.startsWith("blob:")) URL.revokeObjectURL(v.src); $("#sheetRoot").innerHTML = ""; }
 
+function chatHtml(c) {
+  const msgs = (c.chat || []).map((m) => `<div class="msg ${m.from === "you" ? "you" : "agent"}">${esc(m.text)}<small>${m.from === "you" ? "You" : "Agent"}, ${esc(ago(m.at))}</small></div>`).join("");
+  const busy = c.editing || S.pending[c.id] === "re-editing";
+  return `<h3 style="margin-top:20px">Tell the agent what to change</h3>
+    <p class="small muted" style="margin:4px 0 0">${c.can_reedit === false ? "Its original clip isn't stored any more, so only the caption and hashtags can change." : "For example: \"the text is too small\", \"start earlier\", \"no shake\", \"brighter\", \"use a different moment\". Say \"always\" or \"from now on\" and it applies to every reel."}</p>
+    ${msgs ? `<div class="chat">${msgs}</div>` : ""}
+    ${busy ? `<div class="editing"><span class="spin"></span>The agent is re-editing this reel. The new version shows up here in a few minutes.</div>`
+           : `<form id="noteForm" class="composer"><textarea name="t" rows="2" placeholder="What should be different?" required></textarea>
+              <button class="btn primary" aria-label="Send to the agent">Send</button></form>`}`;
+}
 async function openClip(id) {
-  const st = S.status, c = [...st.queue, ...st.posted, ...st.problems].find((x) => x.id === id); if (!c) return;
-  const queued = c.status === "queued" || c.status === "ready";
+  S.openId = id;
+  const st = S.status, c = [...(st.awaiting || []), ...st.queue, ...st.posted, ...st.problems].find((x) => x.id === id); if (!c) return;
+  const waiting = c.status === "ready";
+  S.lastVersion = `${c.version}-${(c.chat || []).length}-${c.editing}`;
+  const queued = c.status === "queued";
   openSheet(`
     <h3 style="font-size:24px;margin:4px 46px 10px 0">${esc(c.hook)}</h3>
     <div class="player" id="player">${c.cover ? `<img alt="" src="${esc(rawUrl(c.cover))}">` : ""}</div>
-    <div><span class="chip k">${esc(c.game_name)}</span><span class="chip k">${esc(c.style_name || c.style)}</span>${c.look ? `<span class="chip k">${esc(c.look)} grade</span>` : ""}${c.seconds ? `<span class="chip k">${Math.round(c.seconds)} s</span>` : ""}${c.sound ? `<span class="chip k">${esc(c.sound)}</span>` : ""}</div>
-    ${c.style_why ? `<p class="small muted" style="margin-top:6px">Made as ${esc((c.style_name || "").toLowerCase())}: ${esc(c.style_why)}.</p>` : ""}
+    <div><span class="chip k">${esc(c.game_name)}</span><span class="chip k">${esc(c.style_name || c.style)}</span>${c.look ? `<span class="chip k">${esc(c.look)} grade</span>` : ""}${c.seconds ? `<span class="chip k">${Math.round(c.seconds)} s</span>` : ""}${c.version > 1 ? `<span class="chip k">version ${c.version}</span>` : ""}${c.sound ? `<span class="chip k">${esc(c.sound)}</span>` : ""}</div>
     ${c.error ? `<p class="small err">Last try: ${esc(c.error)}</p>` : ""}
-    ${queued ? `<form id="capForm">
+    ${waiting && !c.editing ? `<div class="panel" style="margin-top:12px"><h3>Post this reel?</h3>
+        <p class="small ink2" style="margin:0 0 12px">Nothing goes to Instagram until you say so.</p>
+        <button class="btn primary" data-cmd="approve" data-id="${esc(c.id)}">Approve: post at the next posting time</button>
+        <div class="row" style="margin-top:10px"><button class="btn" data-cmd="post_now" data-id="${esc(c.id)}">Approve and post now</button>
+          <button class="btn danger" data-cmd="skip" data-id="${esc(c.id)}">Skip</button></div></div>` : ""}
+    ${queued ? `<p class="small ok" style="margin:12px 0 8px">Approved. Goes out ${esc(when(c.eta) || "at the next posting time")}.</p>
+      <div class="row"><button class="btn primary" data-cmd="post_now" data-id="${esc(c.id)}">Post now</button>
+        <button class="btn danger" data-cmd="skip" data-id="${esc(c.id)}">Skip this reel</button></div>` : ""}
+    ${waiting || queued ? chatHtml(c) + `<details style="margin-top:16px"><summary>Edit the caption yourself</summary><form id="capForm">
         <label class="f">Caption<textarea name="caption">${esc(c.caption)}</textarea></label>
         <label class="f">Hashtags (5 at most)<input name="tags" value="${esc(c.hashtags.join(" "))}" autocapitalize="none"></label>
-        <button class="btn" style="margin-top:12px">Save caption</button></form>
-      <p class="small muted" style="margin:14px 0 8px">Goes out ${esc(when(c.eta) || "at the next posting time")} unless you choose otherwise.</p>
-      <div class="row"><button class="btn primary" data-cmd="post_now" data-id="${esc(c.id)}">Post now</button>
-        <button class="btn danger" data-cmd="skip" data-id="${esc(c.id)}">Skip this reel</button></div>`
+        <button class="btn" style="margin-top:12px">Save caption</button></form></details>`
      : `<p style="margin-top:12px;white-space:pre-wrap">${esc(c.caption)}</p><p class="ink2 small">${esc(c.hashtags.join(" "))}</p>
         ${c.url ? `<a class="btn" href="${esc(c.url)}" target="_blank" rel="noopener">Open on Instagram</a>` : ""}`}`,
   (root) => {
@@ -641,12 +695,27 @@ async function openClip(id) {
         c.caption = f.caption.value; toast("Caption saved"); } catch (err) { toast(err.message); }
       b.disabled = false;
     });
+    const n = $("#noteForm", root);
+    if (n) {
+      n.t.addEventListener("input", () => { n.t.style.height = "auto"; n.t.style.height = Math.min(160, n.t.scrollHeight) + "px"; });
+      n.addEventListener("submit", async (e) => {
+        e.preventDefault(); const text = n.t.value.trim(); if (!text) return;
+        const b = n.querySelector("button"); b.disabled = true;
+        try {
+          await sendCommand({ type: "feedback", id: c.id, text });
+          c.chat = [...(c.chat || []), { from: "you", text, at: new Date().toISOString() }];
+          c.editing = true; S.pending[c.id] = "re-editing";
+          toast("Sent. The agent is re-editing it.");
+          openClip(c.id); poll(true);
+        } catch (err) { toast(err.message); b.disabled = false; }
+      });
+    }
   });
   if (c.preview && !DEMO) {
     try {
-      const res = await gh(`/contents/${c.preview}?ref=agent-data`, { accept: "application/vnd.github.raw", raw: true });
+      const res = await gh(`/contents/${c.preview}?ref=agent-data&v=${c.version || 1}`, { accept: "application/vnd.github.raw", raw: true });
       const url = URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "video/mp4" }));
-      const p = $("#player"); if (p) p.innerHTML = `<video src="${url}" controls playsinline loop preload="auto" poster="${esc(rawUrl(c.cover))}"></video>`;
+      const p = $("#player"); if (p) p.innerHTML = `<video src="${url}" controls playsinline loop preload="auto" poster="${esc(rawUrl(c.cover))}?v=${c.version || 1}"></video>`;
     } catch (e) {}
   }
 }
@@ -713,10 +782,8 @@ function render() {
   view.innerHTML = { home: homeView, reels: reelsView, learned: learnedView, settings: settingsView }[S.tab]();
   setState(); paintUpload();
   if (S.tab === "settings") bindSettings();
-  if (S.status) {                                         // a dot on the Reels tab when new reels arrived
-    const ids = S.status.queue.map((c) => c.id).join(",");
-    if (S.seenQueue === null || S.tab === "reels") S.seenQueue = ids;
-    $("#reelsDot").hidden = S.seenQueue === ids;
+  if (S.status) {                                         // a dot on the Reels tab when reels wait for you
+    $("#reelsDot").hidden = !(S.status.awaiting || []).length;
   }
   window.scrollTo(0, sy);
 }
@@ -747,7 +814,7 @@ function bindSettings() {
       e.preventDefault(); const b = pf.querySelector("button.primary"); b.disabled = true;
       let handle = pf.handle.value.trim(); if (handle && !handle.startsWith("@")) handle = "@" + handle;
       const times = [pf.t0.value, pf.t1.value, pf.t2.value].filter(Boolean).sort();
-      const data = { handle, timezone: pf.timezone.value, autopilot: { paused: pf.paused.checked },
+      const data = { handle, timezone: pf.timezone.value, autopilot: { paused: pf.paused.checked }, review: { require_approval: pf.approval.checked },
         schedule: { max_per_day: +pf.max_per_day.value, auto_times: pf.auto_times.checked, ...(times.length && !pf.auto_times.checked ? { post_times: times } : {}) },
         clips: { per_video: +pf.per_video.value }, engagement: { reply_to_comments: pf.reply.checked }, instagram: { trending_audio: pf.audio.checked } };
       try { await sendCommand({ type: "settings", data }); toast("Saved. The agent picks it up on its next visit."); poll(true); } catch (x) { toast(x.message); }
@@ -770,12 +837,13 @@ document.addEventListener("click", async (e) => {
   if (t.dataset.clip) return openClip(t.dataset.clip);
   if (t.dataset.cmd) {
     const id = t.dataset.id, cmd = t.dataset.cmd;
-    if (cmd === "post_now" && !S.status.agent.connected) return toast("Connect Instagram first (Settings)");
+    if ((cmd === "post_now" || cmd === "approve") && !S.status.agent.connected && cmd === "post_now") return toast("Connect Instagram first (Settings)");
     if (cmd === "skip" && !confirm("Skip this reel? It won't be posted.")) return;
     if (cmd === "post_now" && !confirm("Post this reel to Instagram now?")) return;
     t.disabled = true;
-    try { await sendCommand({ type: cmd, id }); S.pending[id] = cmd === "post_now" ? "posting" : cmd === "skip" ? "skipping" : "retrying";
-      closeSheet(); toast(cmd === "post_now" ? "Posting. It appears under Posted in a few minutes." : cmd === "skip" ? "Skipped" : "Trying again"); render(); poll(true); }
+    try { await sendCommand({ type: cmd, id }); S.pending[id] = { post_now: "posting", skip: "skipping", approve: "approved" }[cmd] || "retrying";
+      closeSheet(); toast({ post_now: "Approved. Posting now; it appears under Posted in a few minutes.", skip: "Skipped",
+        approve: "Approved. It goes out at the next posting time." }[cmd] || "Trying again"); render(); poll(true); }
     catch (x) { toast(x.message); t.disabled = false; }
     return;
   }
@@ -788,6 +856,7 @@ document.addEventListener("click", async (e) => {
   else if (act === "wakeNow") { try { await wake(); toast("The agent is starting a visit"); render(); poll(true); } catch (x) { toast(x.message); } }
   else if (act === "signOut") { if (confirm("Remove the GitHub key from this phone? The agent keeps running; this app just can't control it until you connect again.")) { localStorage.removeItem("ra_token"); S.token = ""; S.status = null; render(); } }
 });
+document.addEventListener("change", (e) => { if (e.target.name === "game") localStorage.setItem("ra_game", e.target.value); });
 $("#picker").addEventListener("change", (e) => { const files = [...e.target.files]; e.target.value = ""; startUpload(files); });
 document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.id === "addBtn") { e.preventDefault(); $("#picker").click(); } if (e.key === "Escape") closeSheet(); });
 
@@ -803,6 +872,11 @@ async function poll(now = false) {
       if (S.status?.updated !== before) S.pending = {};
       const busy = !!$("#sheetRoot").firstElementChild || (S.upload && !S.upload.done && !S.upload.error) || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || "");
       if (!busy) render(); else setState();
+      const open = $("#sheetRoot .sheet");
+      if (open && S.openId && S.status) {
+        const c = [...(S.status.awaiting || []), ...S.status.queue].find((x) => x.id === S.openId);
+        if (c && S.lastVersion !== `${c.version}-${(c.chat || []).length}-${c.editing}` && !/TEXTAREA|INPUT/.test(document.activeElement?.tagName || "")) openClip(S.openId);
+      }
     } catch (e) {
       if (e.status === 401) { localStorage.removeItem("ra_token"); S.token = ""; render(); }
       else { S.err = e.message; setState(); if (!S.status) render(); }
@@ -829,6 +903,11 @@ function demoStatus() {
       styles: ["classic", "slowmo", "replay", "freeze", "meme_bar", "pov", "top3", "montage"], creativity: 0.2, end_cards: true, look: "auto", reply_to_comments: true, trending_audio: true, benchmark_pages: [],
       games: { gta6: "GTA 6", cod: "Call of Duty", fc27: "EA Sports FC 27" },
       all_styles: { classic: "Classic", slowmo: "Slow motion", replay: "Instant replay", freeze: "Freeze frame", meme_bar: "Meme caption", pov: "POV", top3: "Top 3 countdown", montage: "Montage" } },
+    approval: true,
+    awaiting: [clip("cod-0013", "cod", "Call of Duty", "ONE MAG, FOUR DOWN", "replay", "Instant replay", { status: "ready", version: 2, can_reedit: true,
+        chat: [{ from: "you", text: "The title is too small and it starts too late", at: new Date(Date.now() - 18 * 6e4).toISOString() },
+               { from: "agent", text: "Done: bigger text, starts 4s earlier.", at: new Date(Date.now() - 11 * 6e4).toISOString() }] }),
+      clip("gta6-0009", "gta6", "GTA 6", "WAIT FOR THE BRIDGE", "classic", "Classic", { status: "ready", version: 1, can_reedit: true, chat: [] })],
     queue: [clip("gta6-0007", "gta6", "GTA 6", "3 COPS, 1 BRIDGE, 0 BRAKES", "freeze", "Freeze frame", { eta: iso(17, 40) }),
             clip("cod-0012", "cod", "Call of Duty", "ONE MAG, FOUR DOWN", "replay", "Instant replay", { eta: iso(20, 40) }),
             clip("fc27-0004", "fc27", "EA Sports FC 27", "RATE THIS FINISH /10", "slowmo", "Slow motion", { eta: iso(12, 40, 1) }),
@@ -846,7 +925,7 @@ function demoStatus() {
 }
 
 render();
-poll(true);
+poll(true).then(() => { if (DEMO && qs.get("open")) openClip(qs.get("open")); });
 </script>
 </body>
 </html>

@@ -39,7 +39,12 @@ otherwise a comment prompt ("rate it /10"). No hashtags in the caption text. No 
 "game-changer", no "stop scrolling", no "follow for more".
 - Hashtags: at most 5, 1-2 big game tags + 2-3 specific ones. Each starts with #.
 - Flag cutscenes, story endings and big plot reveals: publishers take those down.
-- Loading screens, menus, pause screens, black frames or nothing happening: quality <= 3.
+- Rate quality like an editor choosing what to post from a long session. High (8-10): kills and multi-kills, \
+clutches, big explosions, crashes, stunts, goals, saves, skill shots, genuinely funny fails. Middle (5-7): \
+decent action with no clear payoff. Low (1-4): the player just dying with nothing before it, kill-cams and \
+respawn or "killed by" screens, walking, looting, reloading, aiming at nothing, menus, loading, pause or \
+black screens, the camera pointing away from the TV. Be strict: posting a weak clip hurts the page more than \
+posting nothing.
 - Flag graphic violence (gore, dismemberment) honestly.
 - music_mood: the background music that fits this clip: hype, intense, epic, chill, funny or suspense.
 - edit_style: the kind of reel that suits THIS clip best. Options: classic (payoff-first teaser + punch zoom + \
@@ -80,10 +85,14 @@ SCHEMA = """{
 }"""
 
 
+_VIEW: dict = {}          # path -> VideoInfo, so stills show the straightened screen (set by pipeline)
+
+
 def _frames(video: Path, times: list[float], tmp: Path) -> list[dict]:
     blocks = []
+    info = _VIEW.get(str(Path(video).resolve()))
     for i, t in enumerate(times):
-        f = media.grab_frame(video, t, tmp / f"f{i}.jpg", width=640)
+        f = media.grab_frame(video, t, tmp / f"f{i}.jpg", width=640, pre=info.pre(t - 1, t + 1) if info else "")
         blocks.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                     "data": base64.b64encode(f.read_bytes()).decode()}})
     return blocks
@@ -154,16 +163,60 @@ def _finish(copy: dict, profile: dict) -> dict:
     return copy
 
 
-def fallback(profile: dict, series_no: int) -> dict:
+# Without an AI key the agent can't see what happens in a clip, so these stay general. They are rotated
+# so no two recent reels share a hook or a caption, and matched to the kind of reel once it is chosen.
+TEMPLATE_HOOKS = {
+    "any": ["WAIT FOR IT", "DID NOT EXPECT THAT", "WATCH TILL THE END", "THIS GOT OUT OF HAND", "NO WAY THIS WORKED",
+            "I WAS NOT READY", "HOW DID THAT HAPPEN", "THE ENDING THOUGH", "ZERO HESITATION", "THIS LOBBY WAS WILD"],
+    "replay": ["WATCH THE REPLAY", "RUN IT BACK", "ONE MORE TIME, SLOWER", "SLOW IT DOWN"],
+    "slowmo": ["IN SLOW MOTION", "WATCH IT SLOW", "FRAME BY FRAME", "SO CLEAN"],
+    "freeze": ["HE HAS NO IDEA", "WATCH WHAT HAPPENS NEXT", "PAUSE. NOW WATCH", "THIS IS WHERE IT TURNS"],
+    "top3": ["TOP 3 FROM ONE SESSION", "RANKING TODAY'S BEST", "3 CLIPS, 1 WINNER"],
+    "montage": ["BEST BITS FROM ONE GAME", "ONE SESSION, ALL THE CHAOS", "TODAY'S HIGHLIGHTS"],
+}
+TEMPLATE_CAPTIONS = [
+    "{name}, no edits needed. Rate it out of 10.",
+    "Would you have done the same? {name} clip #{n}.",
+    "Send this to the friend you play {name} with.",
+    "{name} clip #{n}. W or L?",
+    "Still thinking about this one. {name} clip #{n}.",
+    "Tell me you've had a moment like this in {name}.",
+]
+TEMPLATE_CAPTIONS_ANY_GAME = [    # when the game isn't known, don't print "Gaming" where a game's name belongs
+    "No edits needed. Rate it out of 10.",
+    "Would you have done the same? Clip #{n}.",
+    "Send this to the friend you squad up with.",
+    "Clip #{n}. W or L?",
+    "Still thinking about this one.",
+    "Tell me you've had a moment like this.",
+]
+TEMPLATE_LINES = {   # meme_bar / pov lines and freeze labels, when there is no AI to write them
+    "pov": ["POV: you thought this would be easy", "POV: one more game before bed", "POV: the lobby didn't see it coming"],
+    "freeze": ["He has no idea", "Watch this", "Not yet..."],
+}
+
+
+def template_hook(profile: dict, style: str, avoid: list[str], seed: int) -> str:
+    bank = TEMPLATE_HOOKS.get(style, []) + list(profile.get("hooks") or []) + TEMPLATE_HOOKS["any"]
+    seen = {h.upper() for h in avoid}
+    fresh = [h for h in dict.fromkeys(bank) if h.upper() not in seen] or list(dict.fromkeys(bank))
+    first = TEMPLATE_HOOKS.get(style, [])
+    pool = [h for h in fresh if h in first] or fresh
+    return pool[seed % len(pool)]
+
+
+def fallback(profile: dict, series_no: int, avoid: list[str] | None = None) -> dict:
     name = profile.get("name", "Gaming")
-    hooks = list(profile.get("hooks") or ["WAIT FOR IT"])
-    k = series_no % len(hooks)
-    hooks = hooks[k:] + hooks[:k]          # rotate so consecutive clips don't repeat a hook
+    hook = template_hook(profile, "any", avoid or [], series_no)
+    bank = TEMPLATE_CAPTIONS if profile.get("key") not in (None, "", "default") else TEMPLATE_CAPTIONS_ANY_GAME
+    cap = bank[series_no % len(bank)].format(name=name, n=series_no)
     copy = {
         "quality": 7, "what_happens": "", "is_cutscene_or_spoiler": False, "graphic_violence": False,
-        "hook_options": hooks[:3],
+        "hook_options": [hook],
         "music_mood": profile.get("music_mood", "hype"),
-        "instagram_caption": f"{name} clip #{series_no}. Rate it out of 10 in the comments.",
+        "meme_line": TEMPLATE_LINES["pov"][series_no % len(TEMPLATE_LINES["pov"])],
+        "freeze_line": TEMPLATE_LINES["freeze"][series_no % len(TEMPLATE_LINES["freeze"])],
+        "instagram_caption": cap,
         "hashtags": list(profile.get("hashtags", []))[:2] + list(profile.get("trending_tags", []))[:3]
                     or profile.get("hashtags", []),
         "source": "template",
@@ -171,11 +224,13 @@ def fallback(profile: dict, series_no: int) -> dict:
     return _finish(copy, profile)
 
 
-def write_copy(cfg, video: Path, moment, profile: dict, transcript: str, series_no: int, brief: str = "") -> dict:
+def write_copy(cfg, video: Path, moment, profile: dict, transcript: str, series_no: int, brief: str = "",
+               avoid: list[str] | None = None) -> dict:
     """Return the copy dict for one moment (AI if a key is set, else template).
-    `brief` adds an instruction for special reels (e.g. a top-3 countdown built from several moments)."""
+    `brief` adds an instruction for special reels (e.g. a top-3 countdown built from several moments).
+    `avoid`: hooks used on recent reels."""
     if not cfg.ai_available:
-        return fallback(profile, series_no)
+        return fallback(profile, series_no, avoid)
     from . import trends   # late import: trends uses parse_json from this module
 
     trend = trends.prompt_notes(cfg, profile.get("key", ""))
@@ -184,6 +239,8 @@ def write_copy(cfg, video: Path, moment, profile: dict, transcript: str, series_
     span = moment.end - moment.start
     times = [moment.start + span * 0.15, moment.peak - 1.0, moment.peak, min(moment.end - 0.5, moment.peak + 1.5)]
     notes = learnings_text(cfg)
+    from .revise import owner_notes
+    owner = "\n".join(f"- {x}" for x in owner_notes(cfg))
     prompt = (
         f"Game: {profile.get('name')}\n"
         f"This is clip #{series_no} in the page's {profile.get('name')} series.\n"
@@ -192,6 +249,7 @@ def write_copy(cfg, video: Path, moment, profile: dict, transcript: str, series_
         f"Hashtags the page usually uses (pick from these or better ones): {' '.join(profile.get('hashtags', []))}\n"
         f"Page call to action: {profile.get('cta', '')}\n"
         + (f"\nWhat has worked on THIS page so far (from its own stats, trust this over defaults):\n{notes}\n" if notes else "")
+        + (f"\nThe page owner's standing wishes (always follow these):\n{owner}\n" if owner else "")
         + (f"\nWhat's trending this week (live research):\n{trend}\n" if trend else "")
         + (f"\nSPECIAL: {brief}\n" if brief else "")
         + f"\nHook formulas (use three different ones, adapted to gaming):\n{toolkit.formula_menu()}\n\n"

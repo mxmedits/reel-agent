@@ -13,7 +13,7 @@ clips:
   min_gap: 25                # seconds between moments picked from the same recording
   teaser_hook: true          # flash the payoff for ~1.5 s at the start ("wait for it" hook)
   punch_zoom: true           # quick zoom-in on the big moment
-  subtitles: true            # burn your voice commentary in as captions (needs faster-whisper)
+  subtitles: false           # word-by-word subtitles on the video. Off: the title, end question and tags stay
   whisper_model: "small"     # tiny | base | small | medium
   fps: 30
   crf: 20                    # lower = better quality, bigger file
@@ -64,7 +64,7 @@ autopilot:
   paused: false              # true = keep making reels but stop posting and replying
 
 review:
-  require_approval: false    # false = full autopilot (default). true = reels wait for `approve` before posting
+  require_approval: true     # true = nothing posts until you approve it (the app's "Approve" button). false = full autopilot
   min_quality: 6             # Claude rates each moment 1-10; anything lower is never posted
   skip_spoilers: true        # never post cutscenes / story endings (Rockstar takes these down)
 

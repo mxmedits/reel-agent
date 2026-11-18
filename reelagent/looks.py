@@ -60,7 +60,7 @@ LOOKS: dict[str, dict] = {
     "none": {"about": "no grading", "grade": [], "glow": 0.0, "vignette": 0.0, "grain": 0, "sharpen": 0.0},
 }
 
-GAME_LOOK = {"gta6": "vice", "cod": "tactical", "fc27": "stadium", "default": "cinematic"}
+GAME_LOOK = {"gta6": "vice", "cod": "tactical", "fc27": "stadium", "default": "clean"}
 
 
 @dataclass
@@ -110,8 +110,8 @@ def auto_tone(stats: dict) -> tuple[list[str], list[str]]:
     """Photoshop-style Auto Tone from the clip's histogram. Returns (filters, notes)."""
     out, notes = [], []
     lo, hi, mean = stats.get("p2", 0.0), stats.get("p98", 255.0), stats.get("mean", 128.0)
-    if (lo > 10 or hi < 238) and hi - lo > 60:
-        a, b = max(0.0, lo - 4) / 255, min(255.0, hi + 4) / 255
+    if (lo > 10 or hi < 238) and hi - lo > 40:
+        a, b = max(0.0, lo - 2) / 255, min(255.0, hi + 4) / 255
         out.append(f"colorlevels=rimin={a:.3f}:gimin={a:.3f}:bimin={a:.3f}:rimax={b:.3f}:gimax={b:.3f}:bimax={b:.3f}")
         notes.append("auto levels")
     if mean < 62:
@@ -123,36 +123,94 @@ def auto_tone(stats: dict) -> tuple[list[str], list[str]]:
     return out, notes
 
 
+def auto_color(cs: dict) -> tuple[list[str], list[str]]:
+    """Photoshop-style Auto Color for footage filmed off a screen: each channel's own black point
+    (removes the grey veil and the colour cast in the shadows), one shared white point (no new casts
+    in the highlights), and nothing at all if the picture is already fine."""
+    if not cs:
+        return [], []
+    lo = {c: max(0.0, cs[c]["p1"] - 2) / 255 for c in "rgb"}
+    top = max(cs[c]["p99"] for c in "rgb")
+    hi = min(1.0, (top + 3) / 255) if top < 236 else 1.0
+    if max(lo.values()) < 0.03 and hi >= 0.99:
+        return [], []
+    f = (f"colorlevels=rimin={lo['r']:.3f}:gimin={lo['g']:.3f}:bimin={lo['b']:.3f}"
+         f":rimax={hi:.3f}:gimax={hi:.3f}:bimax={hi:.3f}")
+    return [f], [f"auto colour (black point {int(max(lo.values()) * 255)})"]
+
+
 def plan(cfg, game: str, stats: dict | None, ai_pick: str | None = None, impact: bool = True,
-         graphic: bool = False) -> Look:
+         graphic: bool = False, filmed: bool = False, color: dict | None = None) -> Look:
+    """`filmed`: the clip was filmed off a TV with a phone. Then the job is restoring the picture
+    (black level, contrast, colour, camera noise), not adding film grain or glow on top of it."""
     fx = (cfg.get("clips") or {}).get("fx") or {}
     if not fx.get("enabled", True):
         return Look(name="none", cut_flash=False)
     name = choose(cfg, game, ai_pick)
     if stats and stats.get("mean", 128) < 55 and name in ("clean", "stadium"):
         name = "night"                                  # a clean grade on a dark clip just looks muddy
+    if filmed and name == "cinematic":
+        name = "clean"                                  # lifted film blacks make a filmed TV look even greyer
     base = LOOKS[name]
     strength = float(fx.get("strength", 1.0))
     chain, notes = [], [base["about"]]
-    if fx.get("auto_tone", True) and stats:
+    if filmed and fx.get("auto_tone", True) and color:
+        tone, tnotes = auto_color(color)
+        chain += tone
+        notes += tnotes
+    elif fx.get("auto_tone", True) and stats:
         tone, tnotes = auto_tone(stats)
         chain += tone
         notes += tnotes
-    if fx.get("denoise", True):
+    if filmed:
+        if media.has_filter("deflicker"):
+            chain.append("deflicker=size=5:mode=pm")    # phone exposure pumping as the game's brightness changes
+        chain.append("hqdn3d=3:2.5:7:7")                # phone camera noise and the TV's pixel grid
+        chain.append("eq=saturation=1.06")
+        notes.append("filmed off a screen: straightened, cropped, de-noised, colour restored")
+    elif fx.get("denoise", True):
         chain.append("hqdn3d=1.5:1.2:5:5")
-    chain += base["grade"]
+    # a filmed screen gets restored, not stylised: a teal-orange grade on top of a phone's own
+    # processing pushes skin and fire to orange and clips the highlights
+    chain += LOOKS["clean"]["grade"] if filmed and fx.get("look", "auto") == "auto" else base["grade"]
     look = Look(
         name=name, source_chain=_keep(chain),
-        glow=round(base["glow"] * strength, 3) if fx.get("glow", True) else 0.0,
-        vignette=round(base["vignette"] * strength, 3) if fx.get("vignette", True) else 0.0,
-        grain=int(round(base["grain"] * strength)) if fx.get("grain", True) else 0,
-        sharpen=round(base["sharpen"] * min(strength, 1.3), 3) if fx.get("sharpen", True) else 0.0,
+        glow=0.0 if filmed else (round(base["glow"] * strength, 3) if fx.get("glow", True) else 0.0),
+        vignette=round(base["vignette"] * strength * (0.5 if filmed else 1), 3) if fx.get("vignette", True) else 0.0,
+        grain=0 if filmed else (int(round(base["grain"] * strength)) if fx.get("grain", True) else 0),
+        sharpen=(max(0.7, base["sharpen"]) if filmed else round(base["sharpen"] * min(strength, 1.3), 3))
+        if fx.get("sharpen", True) else 0.0,
         shake=bool(impact and fx.get("impact_shake", True)),
         flash=bool(impact and fx.get("impact_flash", True) and not graphic),
         rgb_split=bool(impact and fx.get("rgb_split", True)),
         cut_flash=bool(fx.get("cut_flash", True)),
         notes=notes,
     )
+    return look
+
+
+def apply_overrides(look: Look, o: dict) -> Look:
+    """Changes the owner asked for in the chat (brighter, no shake, no grain...)."""
+    for k in ("shake", "flash", "rgb_split", "cut_flash"):
+        if k in o:
+            setattr(look, k, bool(o[k]))
+    if "grain" in o:
+        look.grain = (look.grain or 4) if o["grain"] else 0
+    if "glow" in o:
+        look.glow = (look.glow or 0.15) if o["glow"] else 0.0
+    if "vignette" in o:
+        look.vignette = (look.vignette or 0.4) if o["vignette"] else 0.0
+    if "sharpen" in o:
+        look.sharpen = (look.sharpen or 0.6) if o["sharpen"] else 0.0
+    s = o.get("look_strength")
+    if s:
+        look.glow, look.vignette = round(look.glow * s, 3), round(look.vignette * s, 3)
+        look.grain = int(round(look.grain * s))
+    b, c, sat = float(o.get("brightness", 0)), float(o.get("contrast", 0)), float(o.get("saturation", 0))
+    if b or c or sat:
+        look.source_chain = list(look.source_chain) + [
+            f"eq=brightness={b * 0.12:.3f}:contrast={1 + c * 0.3:.3f}:saturation={1 + sat * 0.5:.3f}"]
+        look.notes.append("owner's adjustments")
     return look
 
 

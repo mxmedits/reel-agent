@@ -8,7 +8,7 @@ You add gameplay in the app. The agent does the rest, on GitHub's free computers
    meme caption, POV, top-3 countdown or montage, with a colour grade, sharpening, impact effects and captions.
 4. **Writes the post**: three hook options scored against each other, a caption and five hashtags, shaped by
    what is working on Instagram this week.
-5. **Posts at the best times** through Instagram's official system, answers comments, reads the stats.
+5. **Asks for your OK**, then posts at the best times through Instagram's official system, answers comments, reads the stats.
 6. **Keeps learning**: what top posts look like, how top reels are made, and which kinds of reel your own
    viewers watch.
 
@@ -47,6 +47,31 @@ Keys are stored as encrypted repository secrets; the app encrypts them on your p
   after its posting time.
 - Clips up to about 1 GB upload fine on Wi-Fi. Keep the app open until the upload finishes.
 - Voice commentary captions (Whisper) are not available in this mode.
+
+## ✋ You approve every reel, and you can tell the agent what to change
+
+Nothing goes to Instagram until you approve it (Settings, "Ask me before posting"; on by default).
+New reels appear under **Waiting for your OK** in the app. Open one, watch it, then:
+- **Approve**: it goes out at the next posting time. **Approve and post now** posts it right away. **Skip** drops it.
+- **Tell the agent what to change**: write it in plain words ("the text is too small", "start earlier",
+  "no shake", "brighter", "use a different moment", "make it a slow-motion replay"). The agent re-edits the reel
+  from your original clip, replies with what it changed, and asks for your OK again.
+  Say "always", "never" or "from now on" and the wish is saved for every future reel.
+  With the free AI key the agent understands any wording; without it, it understands short notes like the examples.
+
+The original clip is kept (as a release file) until all its reels are posted or skipped, so re-edits are possible.
+
+## 📺 Filmed your TV with your phone? That's handled
+
+If a clip was filmed off a TV or monitor, the agent finds the screen, straightens it to a flat 16:9 picture,
+crops the room away and steadies the hand shake. It then restores the picture (black level, colour cast,
+camera noise) instead of adding film effects on top. iPhone HDR video is converted properly, so it doesn't
+come out grey. Moments where the phone pointed away, the screen was black (loading, death screens) or the
+phone was being moved are avoided when picking highlights. The sharpest reels still come from the console's
+own recording (PS5: Create button, then the PlayStation App; Xbox: capture, then the Xbox app).
+
+**No subtitles**: word-by-word subtitles are off. The title at the start, the question at the end and tags
+like REPLAY or #1 stay. (`clips.subtitles` in the settings file turns subtitles back on.)
 
 ## 🎬 Kinds of reel, and how the agent chooses
 

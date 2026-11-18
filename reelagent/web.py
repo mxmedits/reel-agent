@@ -400,7 +400,7 @@ def clip_action(cid: str, action: str, caption: str = Form(None), hashtags: str 
         db.update(cid, status="rejected")
         return {"msg": f"Skipped {cid}."}
     if action == "approve":
-        db.update(cid, status="queued")
+        db.update(cid, status="queued", copy_json={**copy_of(db.get(cid)), "approved": True})
         return {"msg": f"Approved {cid}; it posts at the next slot."}
     if action == "caption":
         c = copy_of(r)

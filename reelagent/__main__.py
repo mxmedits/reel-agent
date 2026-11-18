@@ -113,7 +113,7 @@ def cmd_approve(cfg, a):
     rows = db.clips("ready") if a.id == "all" else [db.get(a.id)]
     for r in rows:
         if r:
-            db.update(r["id"], status="queued")
+            db.update(r["id"], status="queued", copy_json={**copy_of(r), "approved": True})
             print("approved", r["id"])
 
 

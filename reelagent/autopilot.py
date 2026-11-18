@@ -64,8 +64,19 @@ def pick_next(cfg, db: DB):
     return sorted(rows, key=rank)[0]
 
 
+def approved(cfg, row) -> bool:
+    """With approval switched on, only reels the owner approved may be posted."""
+    if not (cfg.get("review") or {}).get("require_approval", True):
+        return True
+    return bool(copy_of(row).get("approved"))
+
+
 def post(cfg, db: DB, row, dry_run: bool = False, log=pipeline.log) -> bool:
     copy = copy_of(row)
+    if not approved(cfg, row):
+        db.update(row["id"], status="ready")
+        log(f"✋ {row['id']} needs your approval before it can be posted", cfg)
+        return False
     text = captions.instagram_text(copy)
     file = Path(row["file"])
     if not file.exists():

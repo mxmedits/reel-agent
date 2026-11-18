@@ -308,7 +308,7 @@ def apply_commands(cfg, db, log) -> dict:
     """Run the command files the app left in commands/. Returns {'post_now': [ids], 'changed': bool}."""
     from .db import copy_of
     folder = HOME / "commands"
-    result = {"post_now": [], "changed": False}
+    result = {"post_now": [], "changed": False, "feedback": []}
     if not folder.is_dir():
         return result
     for f in sorted(folder.glob("*.json")):
@@ -322,8 +322,17 @@ def apply_commands(cfg, db, log) -> dict:
                 result["changed"] = True
                 log("⚙️ settings updated from the app: " + ", ".join(sorted(data)))
             elif kind == "post_now" and row and row["status"] in ("queued", "ready", "failed"):
-                db.update(cid, status="queued", attempts=0, error=None)
+                db.update(cid, status="queued", attempts=0, error=None, copy_json={**copy_of(row), "approved": True})
                 result["post_now"].append(cid)
+                log(f"👍 {cid} approved in the app, posting now")
+            elif kind == "feedback" and row and row["status"] != "posted" and str(cmd.get("text") or "").strip():
+                from . import revise
+                revise.add_chat(db, cid, "you", str(cmd["text"]).strip())
+                db.update(cid, copy_json={**copy_of(db.get(cid)), "editing": True})
+                result["feedback"].append((cid, str(cmd["text"]).strip()))
+            elif kind == "approve" and row and row["status"] in ("ready", "queued"):
+                db.update(cid, status="queued", copy_json={**copy_of(row), "approved": True})
+                log(f"👍 {cid} approved in the app, it goes out at the next posting time")
             elif kind == "skip" and row and row["status"] != "posted":
                 db.update(cid, status="rejected")
                 log(f"⏭ {cid} skipped from the app")
@@ -338,7 +347,7 @@ def apply_commands(cfg, db, log) -> dict:
                     copy["hashtags"] = _clean_hashtags(cmd["hashtags"], [])
                 db.update(cid, copy_json=copy)
                 log(f"✏️ caption of {cid} edited in the app")
-            elif kind in ("post_now", "skip", "retry", "caption"):
+            elif kind in ("post_now", "approve", "skip", "retry", "caption", "feedback"):
                 log(f"({kind} from the app ignored: reel {cid or '?'} is not in a state where that applies)")
             elif kind not in ("wake", None):
                 log(f"(ignored a command the agent doesn't know: {kind})")
@@ -389,6 +398,73 @@ def fetch_upload(ref: str, work: Path) -> tuple[Path, dict]:
     return dest, meta
 
 
+def hold_unapproved(cfg, db, log) -> None:
+    """With approval on, every waiting reel the owner hasn't approved moves to 'waiting for your OK'."""
+    from . import autopilot
+    if not (cfg.get("review") or {}).get("require_approval", True):
+        return
+    held = [r["id"] for r in db.clips("queued") if not autopilot.approved(cfg, r)]
+    for cid in held:
+        db.update(cid, status="ready")
+    if held:
+        log(f"✋ {len(held)} reel(s) now wait for your approval: {', '.join(held)}")
+
+
+def store_reel(cfg, db, gh: GitHub, cid: str, log) -> None:
+    """A small preview for the app, and the full-quality reel in the release files."""
+    folder = cfg.output / "clips" / cid
+    reel = folder / "reel.mp4"
+    try:
+        from . import media
+        media.run(["ffmpeg", "-y", "-v", "error", "-i", str(reel), "-vf", "scale=540:-2", "-r", "30",
+                   *media.encode_args(31, "veryfast"), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
+                   "-movflags", "+faststart", str(folder / "preview.mp4")])
+    except Exception as e:
+        log(f"  (no preview for {cid}: {str(e)[:120]})")
+    for i in range(3):
+        try:
+            gh.upload(reel, f"{cid}.mp4")
+            return
+        except Exception as e:
+            if i == 2:
+                db.update(cid, status="failed", error=f"could not store the reel: {e}")
+                log(f"! {cid}: could not store the reel ({e})")
+            time.sleep(5)
+
+
+def answer_notes(cfg, db, gh: GitHub, notes: list, log, events: list) -> None:
+    """The owner's chat notes: re-edit each reel as asked and reply."""
+    from . import revise
+    from .db import copy_of, render_of
+    if not notes:
+        return
+    ensure_ffmpeg(log)
+    work = Path(tempfile.mkdtemp(prefix="reelagent-edit-"))
+    sources: dict[str, Path | None] = {}
+    for cid, text in notes:
+        row = db.get(cid)
+        if not row:
+            continue
+        name = render_of(row).get("source_asset") or ""
+        if name and name not in sources:
+            dest = work / name
+            sources[name] = dest if gh.download(name, dest) else None
+        src = sources.get(name) if name else (Path(row["source"]) if Path(row["source"]).exists() else None)
+        log(f"💬 {cid}: \"{text[:120]}\"")
+        before = render_of(row).get("version", 1)
+        reply = revise.handle(cfg, db, cid, text, src)
+        row = db.get(cid)
+        copy = copy_of(row)
+        copy.pop("editing", None)
+        db.update(cid, copy_json=copy)
+        if render_of(row).get("version", 1) != before:
+            store_reel(cfg, db, gh, cid, log)
+        log(f"   ↳ {reply}")
+        events.append((f"✏️ {cid} re-edited, waiting for your OK" if render_of(row).get("version", 1) != before
+                       else f"💬 Reply about {cid}", reply))
+    shutil.rmtree(work, ignore_errors=True)
+
+
 def process_inbox(cfg, db, gh: GitHub, log, events: list) -> None:
     from . import media, pipeline
     refs = inbox_refs()
@@ -419,30 +495,27 @@ def process_inbox(cfg, db, gh: GitHub, log, events: list) -> None:
             src = db.conn.execute("SELECT * FROM sources WHERE path=?", (str(path.resolve()),)).fetchone()
             if src and src["status"] == "skipped":
                 note = src["note"] or "skipped"
-            for cid in made:
-                folder = cfg.output / "clips" / cid
-                reel = folder / "reel.mp4"
-                try:   # a small preview for the app; the full-quality reel goes to the release files
-                    media.run(["ffmpeg", "-y", "-v", "error", "-i", str(reel), "-vf", "scale=540:-2", "-r", "30",
-                               *media.encode_args(31, "veryfast"), "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k",
-                               "-movflags", "+faststart", str(folder / "preview.mp4")])
+            if made:          # keep the original so the chat can re-edit these reels later
+                src_name = f"src-{ref.split('/')[-1]}{path.suffix.lower()}"
+                try:
+                    gh.upload(path, src_name)
                 except Exception as e:
-                    log(f"  (no preview for {cid}: {str(e)[:120]})")
-                for i in range(3):
-                    try:
-                        gh.upload(reel, f"{cid}.mp4")
-                        break
-                    except Exception as e:
-                        if i == 2:
-                            db.update(cid, status="failed", error=f"could not store the reel: {e}")
-                            log(f"! {cid}: could not store the reel ({e})")
-                        time.sleep(5)
+                    src_name = ""
+                    log(f"  (couldn't keep the original for re-edits: {str(e)[:120]})")
+            for cid in made:
+                if src_name:
+                    from .db import render_of
+                    db.update(cid, render_json={**render_of(db.get(cid)), "source_asset": src_name})
+                store_reel(cfg, db, gh, cid, log)
             path.unlink(missing_ok=True)
             if made:
                 from .db import copy_of
                 hooks = [copy_of(db.get(c)).get("hook_text", "") for c in made]
-                events.append((f"🎬 {len(made)} reel{'s' if len(made) != 1 else ''} made from {h['name']}",
-                               "\n".join(f"- {c}: \"{x}\"" for c, x in zip(made, hooks))))
+                waiting = (cfg.get("review") or {}).get("require_approval", True)
+                events.append((f"🎬 {len(made)} reel{'s' if len(made) != 1 else ''} made from {h['name']}"
+                               + (", waiting for your OK" if waiting else ""),
+                               "\n".join(f"- {c}: \"{x}\"" for c, x in zip(made, hooks))
+                               + ("\n\nOpen the app, watch them, and tap Approve on the ones you want posted." if waiting else "")))
             h.update(status="done" if made else "nothing", reels=made,
                      note=note or ("" if made else "no moment was strong enough to post"))
         except Exception as e:
@@ -521,8 +594,14 @@ def tidy(cfg, db, gh: GitHub) -> None:
     except Exception:
         assets = {}
     rows = db.clips()
-    alive = {r["id"] for r in rows if r["status"] in ("queued", "ready")}
+    alive = {r["id"] for r in rows if r["status"] in ("queued", "ready")}   # 'ready' = waiting for approval
+    from .db import render_of
+    needed = {render_of(r).get("source_asset") for r in rows if r["status"] in ("queued", "ready", "failed")}
     for name in assets:
+        if name.startswith("src-"):
+            if name not in needed:
+                gh.delete(name)              # all its reels are posted or skipped: no more re-edits
+            continue
         if name.endswith(".mp4") and name[:-4] not in alive:
             failed = next((r for r in rows if r["id"] == name[:-4] and r["status"] == "failed"), None)
             if failed and (failed["attempts"] or 0) < 3:
@@ -564,6 +643,11 @@ def _clip(cfg, row, insights: dict, eta: str | None = None) -> dict:
             d["stats"] = {k: i[k] for k in ("views", "reach", "likes", "comments", "shares", "saved") if i[k] is not None}
     if row["error"]:
         d["error"] = row["error"]
+    d["chat"] = (c.get("chat") or [])[-20:]
+    d["editing"] = bool(c.get("editing"))
+    d["approved"] = bool(c.get("approved"))
+    d["version"] = int(r.get("version", 1))
+    d["can_reedit"] = bool(r.get("source_asset")) or Path(row["source"] or "/nonexistent").exists()
     return d
 
 
@@ -629,6 +713,7 @@ def build_status(cfg, db, account: dict | None, note: str = "") -> dict:
             "style": cfg["clips"].get("style", "auto"), "styles": allowed(cfg),
             "creativity": float(cfg["clips"].get("creativity", 0.2)), "end_cards": bool(cfg["clips"].get("end_cards", True)),
             "look": (cfg["clips"].get("fx") or {}).get("look", "auto"),
+            "require_approval": bool((cfg.get("review") or {}).get("require_approval", True)),
             "reply_to_comments": bool((cfg.get("engagement") or {}).get("reply_to_comments", True)),
             "trending_audio": bool((cfg.get("instagram") or {}).get("trending_audio", True)),
             "benchmark_pages": (cfg.get("trends") or {}).get("benchmark_pages") or [],
@@ -636,6 +721,8 @@ def build_status(cfg, db, account: dict | None, note: str = "") -> dict:
             "all_styles": {k: v["name"] for k, v in FORMATS.items()},
         },
         "queue": [_clip(cfg, r, insights, etas[i] if i < len(etas) else None) for i, r in enumerate(queue)],
+        "awaiting": [_clip(cfg, r, insights) for r in sorted(db.clips("ready"), key=lambda r: r["created_at"], reverse=True)],
+        "approval": bool((cfg.get("review") or {}).get("require_approval", True)),
         "posted": [_clip(cfg, r, insights) for r in posted],
         "problems": [_clip(cfg, r, insights) for r in problems],
         "uploads": uploads,
@@ -683,6 +770,7 @@ def run(cfg_path=None) -> int:
         cmds = apply_commands(cfg, db, log)
         if cmds["changed"]:
             cfg = Config(cfg_path)
+        hold_unapproved(cfg, db, log)
         connected = bool(cfg.ig_user_id and cfg.ig_token)
         if cfg.get("handle") in (None, "", "@yourpage"):       # no watermark chosen: use the Instagram name, or none
             name = cfg.user_config().get("ig_username") or ""
@@ -693,6 +781,7 @@ def run(cfg_path=None) -> int:
             cfg.data["handle"] = f"@{name.lstrip('@')}" if name else ""
 
         autopilot.trends_job(cfg, db, pipeline.log)                 # fresh trends before any editing
+        answer_notes(cfg, db, gh, cmds["feedback"], log, events)    # the owner is waiting on these: first
         process_inbox(cfg, db, gh, log, events)
 
         if connected:
@@ -707,11 +796,18 @@ def run(cfg_path=None) -> int:
                 else:
                     flag = cfg.state_dir / "empty_alert.txt"
                     today = datetime.now().strftime("%Y-%m-%d")
+                    waiting = len(db.clips("ready"))
                     if not flag.exists() or flag.read_text().strip() != today:
                         flag.write_text(today)
-                        log("📭 a posting time has come but the queue is empty")
-                        events.append(("📭 Nothing to post", "A posting time has come and the queue is empty. "
-                                                            "Add gameplay in the app and the agent will cut new reels."))
+                        if waiting:
+                            log(f"✋ a posting time has come; {waiting} reel(s) wait for your approval")
+                            events.append(("✋ Reels waiting for your OK",
+                                           f"A posting time has come and {waiting} reel{'s' if waiting != 1 else ''} "
+                                           "wait for your approval. Open the app to approve or change them."))
+                        else:
+                            log("📭 a posting time has come but the queue is empty")
+                            events.append(("📭 Nothing to post", "A posting time has come and the queue is empty. "
+                                                                "Add gameplay in the app and the agent will cut new reels."))
         elif cmds["post_now"]:
             log("! can't post yet: Instagram isn't connected (Settings in the app)")
 

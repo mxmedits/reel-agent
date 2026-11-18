@@ -60,9 +60,13 @@ def _cached_trending(cfg, ig) -> list[dict]:
     return items
 
 
+LAST = {"why": ""}     # why the last plan_sound found nothing: "empty" (Instagram offered none) or "no_fit"
+
+
 def plan_sound(cfg, db, copy: dict, game: str, exclude: list[str] | None = None, log=print) -> dict | None:
     """Choose the Instagram sound for a reel while it's being edited, so the owner sees it before approving.
-    None when Instagram isn't connected, sounds are switched off, or nothing fits."""
+    None when Instagram isn't connected, sounds are switched off, or nothing fits (LAST["why"] says which)."""
+    LAST["why"] = "no_fit"
     from . import instagram
     from .db import copy_of
     igc = cfg.get("instagram") or {}
@@ -96,9 +100,17 @@ def pick_sound(cfg, ig, copy: dict, game: str, recent_ids: list[str], log=print)
     for term in (trends.music_terms(cfg)[:3] + MOOD_TERMS.get(copy.get("music_mood", ""), []))[:4]:
         try:
             add(ig.search_audio(term, limit=8), f"search: {term}")
-        except Exception:
-            pass
+        except Exception as e:
+            log(f"  (Instagram music search '{term}' failed: {safety_text(e)[:160]})")
+    if not cands:                      # no cleared music: trending original sounds are Instagram audio too
+        try:
+            add([{**i, "display_artist": i.get("display_artist") or ("@" + i["ig_username"] if i.get("ig_username") else "")}
+                 for i in ig.search_audio(None, audio_type="original_sound", limit=25)], "trending original sound")
+        except Exception as e:
+            log(f"  (trending original sounds unavailable: {safety_text(e)[:160]})")
     if not cands:
+        log("  (Instagram's Audio API returned no sounds for this account)")
+        LAST["why"] = "empty"
         return None
     cands = cands[:30]
     if not cfg.ai_available:
@@ -119,6 +131,33 @@ def pick_sound(cfg, ig, copy: dict, game: str, recent_ids: list[str], log=print)
         return cands[int(i)] if i is not None and 0 <= int(i) < len(cands) else None
     except Exception:
         return cands[0]
+
+
+# ── what Instagram's Audio API offers this account ──────────────────────────
+
+def audio_check(cfg, ig, log=print) -> dict:
+    """Ask the Audio API for trending music, trending original sounds and one search, and keep what came
+    back (counts, a few titles, errors). Instagram only offers apps the audio it has cleared for third-party
+    use, and the selection differs by account and country, so this is the only way to know."""
+    out = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    for key, kind, q in (("music_trending", "music", None), ("original_trending", "original_sound", None),
+                         ("music_search", "music", "hype")):
+        try:
+            items = ig.search_audio(q, audio_type=kind, limit=25)
+            out[key] = {"n": len(items), "titles": [f"{i.get('title', '')} - {i.get('display_artist') or i.get('ig_username') or ''}".strip(" -")
+                                                     for i in items[:5]]}
+        except Exception as e:
+            out[key] = {"n": 0, "error": safety_text(e)}
+    (cfg.state_dir / "audio_check.json").write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
+    summary = ", ".join(f"{k.replace('_', ' ')}: {v.get('n', 0)}" + (f" (error: {v['error'][:90]})" if v.get("error") else "")
+                        for k, v in out.items() if isinstance(v, dict))
+    log(f"🎵 Instagram's music for apps: {summary}")
+    return out
+
+
+def safety_text(e) -> str:
+    from . import safety
+    return safety.scrub(str(e))[:300]
 
 
 # ── trial reels ─────────────────────────────────────────────────────────────

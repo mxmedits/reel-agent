@@ -34,7 +34,7 @@ RUBRIC_LABELS = {"name_field": "Name field", "bio_first_line": "Bio, first line"
                  "pinned_three": "Pinned reels", "link": "Link", "highlights": "Highlights",
                  "grid_legibility": "Grid covers", "photo": "Profile photo", "handle": "Handle",
                  "category_contact": "Category and contact", "recent_activity": "Posting lately",
-                 "consistency": "Same look across posts"}
+                 "story_presence": "Stories"}
 
 
 def path(cfg) -> Path:
@@ -167,6 +167,8 @@ Rules:
   (hashtags in a bio are clickable, use the game's main one). Use \\n for line breaks (at most 3 lines).
 - Never invent numbers, followers, giveaways, prizes, schedules the facts don't support, or links.
 - Score honestly against the rubric. A new page with an empty name field and bio scores in the teens.
+- You can't see the photo, the grid or the stories. Score those only from the facts given (has_photo,
+  reels_posted); never describe what a photo looks like.
 - items: one per rubric id: {"id": "<rubric id>", "got": <points>, "of": <max>, "note": "<= 12 words"}.
 - highlights: 4 to 6 short highlight names (1-2 words each) for later, when stories exist.
 - link: one sentence on where the single bio link should point (or to leave it empty), no URLs invented.
@@ -228,14 +230,14 @@ def fixes(cfg, prof: dict, kit: dict, posted: int, top: list[dict]) -> list[dict
          "why": "A stranger arrives from one reel and decides in about three seconds. The bio tells them there's "
                 "more of that here. Edit profile → Bio, 150 characters.",
          "options": kit.get("bio_options") or []}]
-    if posted:
+    if posted >= 3:
         out.append({"id": "pin", "title": "Pin your best reels", "done": False, "manual": True,
                     "why": "Pinned reels sit at the top of your grid, so new visitors see your best work first. "
                            "Open the reel in Instagram, tap ⋯, then Pin to your profile. Up to 3.",
                     "reels": top})
     else:
         out.append({"id": "pin", "title": "Pin your best reels", "done": False, "later": True,
-                    "why": "Once a few reels are up, the agent tells you which 3 to pin here."})
+                    "why": "Once 3 reels are up, the agent tells you which ones to pin here."})
     out.append({"id": "link", "title": "Link", "done": bool(site), "optional": True, "now": site,
                 "why": kit.get("link") or "One link at most, to where your clips continue (a YouTube channel)."})
     return out
@@ -250,9 +252,10 @@ def job(cfg, db, ig, log=print, force: bool = False) -> dict | None:
     if not force and _age_h(old.get("read_at")) < READ_EVERY_H:
         return None
     flag(cfg).unlink(missing_ok=True)
-    prof = ig.profile()
-    prof = {k: prof.get(k) for k in ("username", "name", "biography", "website", "followers_count",
-                                      "follows_count", "media_count")}
+    raw = ig.profile()
+    prof = {k: raw.get(k) for k in ("username", "name", "biography", "website", "followers_count",
+                                     "follows_count", "media_count")}
+    has_photo = bool(raw.get("profile_picture_url"))
     sig = json.dumps([prof.get("name"), prof.get("biography"), prof.get("website")], ensure_ascii=False)
     posted = db.conn.execute("SELECT COUNT(*) FROM clips WHERE status = 'posted'").fetchone()[0]
     top = top_reels(cfg, db)
@@ -269,6 +272,7 @@ def job(cfg, db, ig, log=print, force: bool = False) -> dict | None:
                      "reels_per_day": int(cfg["schedule"]["max_per_day"]),
                      "kinds_of_reel": list((cfg.get("clips") or {}).get("styles") or [])[:8],
                      "best_reels": [{"hook": r["hook"], "views": r["views"]} for r in top],
+                     "has_photo": has_photo,
                      "account_type": "Instagram Creator account, category Gamer, linked Facebook Page"}
             try:
                 got = ai_kit(cfg, prof, facts)

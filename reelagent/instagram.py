@@ -172,7 +172,7 @@ class Instagram:
     # ── engagement + analytics (ig-reply, ig-audit, ig-profile) ─────────────
     def profile(self) -> dict:
         return _check(requests.get(f"{self.base}/{self.uid}", timeout=30, params={
-            "fields": "username,name,biography,website,followers_count,follows_count,media_count",
+            "fields": "username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url",
             "access_token": self.token}))
 
     def recent_media(self, limit: int = 30) -> list[dict]:

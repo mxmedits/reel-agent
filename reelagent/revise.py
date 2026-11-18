@@ -399,7 +399,7 @@ def remake(cfg, db: DB, clip_id: str, plan: dict, src: Path) -> dict:
             if picked:
                 copy["ig_audio_plan"] = picked
             else:
-                music_note = "no_fit"
+                music_note = "ig_empty" if reach.LAST.get("why") == "empty" else "no_fit"
         if not copy.get("ig_audio_plan"):                  # Instagram can't supply one: the reel gets a beat
             track = "beat"
     else:
@@ -510,6 +510,10 @@ def handle(cfg, db: DB, clip_id: str, text: str, src: Path | None) -> str:
             elif res.get("music_note") == "no_instagram":
                 reply += (" I can't take music from Instagram until Instagram is connected (Settings, Connect "
                           "Instagram), so for now it has a beat I made for it, with the drop on the big moment.")
+            elif res.get("music_note") == "ig_empty":
+                reply += (" I asked Instagram for music, but its music search for apps returned no songs for your "
+                          "account right now (Instagram only gives apps the sounds it has cleared for them, and none "
+                          "came back). So it has a beat I made for it. I check again twice a day.")
             elif res.get("music_note") == "no_fit":
                 reply += " Instagram had no sound that fits this clip right now, so it has a beat I made for it."
             elif changes.get("music") and res.get("has_music"):

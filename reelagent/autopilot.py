@@ -97,7 +97,7 @@ def post(cfg, db: DB, row, dry_run: bool = False, log=pipeline.log) -> bool:
         if sound:
             voiced = bool(render.get("voice"))
             game = ((render.get("overrides") or {}).get("game_audio")) or "normal"
-            video = {"off": 0, "low": 25}.get(game, int(igc.get("video_volume", 55)))
+            video = {"off": 1, "low": 25}.get(game, int(igc.get("video_volume", 55)))   # the API takes 1-100
             audio = {"audio_id": sound["audio_id"],
                      "audio_volume": 25 if voiced else int(igc.get("audio_volume", 70)),
                      "video_volume": 100 if voiced else video}
@@ -261,6 +261,14 @@ def tick(cfg, db: DB, dry_run: bool = False, log=pipeline.log, due=None, process
         except Exception as ex:
             log(f"! smart times: {ex}", cfg)
         db.job_done("times")
+
+    # 5b. what the Audio API offers this account (twice a day; it's what "music from Instagram" can use)
+    if (cfg.get("instagram") or {}).get("trending_audio", True) and _every(db, "audio_check", 12 * 60):
+        try:
+            reach.audio_check(cfg, ig, log=lg)
+        except Exception as ex:
+            log(f"! audio check: {ex}", cfg)
+        db.job_done("audio_check")
 
     # 6. the profile (ig-profile): read every few hours, scored and rewritten when new, changed or stale.
     #    Instagram can't edit a profile through its API, so the fixes go to the app with copy buttons.

@@ -1,0 +1,174 @@
+{
+ "name_options": [
+  "GTA 6 & CoD Clips | Gameplay",
+  "Gaming Clips | GTA & FC 27",
+  "Best Gaming Clips | Gameplay"
+ ],
+ "bio_options": [
+  "The best GTA 6, Call of Duty, and EA Sports FC clips daily.\nWatch top gameplay montages and classic moments.",
+  "Daily gameplay clips for Call of Duty, GTA 6, and FC 27 fans.\nNew slowmo replays and kills every single day.",
+  "Top tier gaming clips and montages for true gamers.\nWatch daily gameplay from GTA 6, CoD, and FC 27."
+ ],
+ "highlights": [
+  "GTA 6",
+  "Call of",
+  "FC 27",
+  "Best Moments"
+ ],
+ "link": "Leave the link empty until you have a specific destination such as a YouTube channel or community page to point followers to.",
+ "summary": "The name field wastes searchable words, the bio uses generic filler, and nothing is pinned.",
+ "score": 34,
+ "items": [
+  {
+   "id": "name_field",
+   "label": "Name field",
+   "got": 6,
+   "of": 12,
+   "note": "Includes game category but format is generic."
+  },
+  {
+   "id": "bio_first_line",
+   "label": "Bio, first line",
+   "got": 3,
+   "of": 12,
+   "note": "Generic statements instead of targeting specific games."
+  },
+  {
+   "id": "bio_body",
+   "label": "Bio, the rest",
+   "got": 4,
+   "of": 8,
+   "note": "Uses hashtag instead of proof or clear offer."
+  },
+  {
+   "id": "pinned_three",
+   "label": "Pinned reels",
+   "got": 0,
+   "of": 10,
+   "note": "Nothing pinned on the grid."
+  },
+  {
+   "id": "link",
+   "label": "Link",
+   "got": 0,
+   "of": 8,
+   "note": "No website link provided."
+  },
+  {
+   "id": "highlights",
+   "label": "Highlights",
+   "got": 2,
+   "of": 8,
+   "note": "No highlight structure present for new profile."
+  },
+  {
+   "id": "grid_legibility",
+   "label": "Grid covers",
+   "got": 3,
+   "of": 8,
+   "note": "Only one reel posted, covers not optimized."
+  },
+  {
+   "id": "photo",
+   "label": "Profile photo",
+   "got": 4,
+   "of": 6,
+   "note": "Account has photo, details unverified."
+  },
+  {
+   "id": "handle",
+   "label": "Handle",
+   "got": 4,
+   "of": 6,
+   "note": "Handle has underscores making it harder to say."
+  },
+  {
+   "id": "category_contact",
+   "label": "Category and contact",
+   "got": 6,
+   "of": 6,
+   "note": "Creator account with Gamer category set."
+  },
+  {
+   "id": "recent_activity",
+   "label": "Posting lately",
+   "got": 2,
+   "of": 10,
+   "note": "Only one media item present."
+  },
+  {
+   "id": "story_presence",
+   "label": "Stories",
+   "got": 0,
+   "of": 6,
+   "note": "No active story status detected."
+  }
+ ],
+ "after_score": 62,
+ "source": "ai",
+ "written_at": "2026-11-18T21:25:29+00:00",
+ "read_at": "2026-11-21T10:24:44+00:00",
+ "sig": "[\"Gaming Clips | Gameplay\", \"Top tier gameplay clips and montages.\\nNew clips every day.\\n#gaming\", null]",
+ "current": {
+  "username": "average_gamingclipz",
+  "name": "Gaming Clips | Gameplay",
+  "biography": "Top tier gameplay clips and montages.\nNew clips every day.\n#gaming",
+  "website": null,
+  "followers_count": 0,
+  "follows_count": 0,
+  "media_count": 1
+ },
+ "top": [
+  {
+   "id": "cod-0002",
+   "hook": "3 KILLS, 1 CORRIDOR, 0 SECONDS",
+   "views": 194,
+   "shares": 0,
+   "link": "https://www.instagram.com/reel/Df4nOZsiMjt/",
+   "at": "2026-11-18T13:28:42+00:00"
+  }
+ ],
+ "posted": 1,
+ "username": "average_gamingclipz",
+ "fixes": [
+  {
+   "id": "name",
+   "title": "Name field",
+   "now": "Gaming Clips | Gameplay",
+   "done": true,
+   "why": "The bold line under your photo. Instagram search matches it, so it should say what the page is. It's set in Edit profile → Name. Instagram lets you change it twice in 14 days.",
+   "options": [
+    "GTA 6 & CoD Clips | Gameplay",
+    "Gaming Clips | GTA & FC 27",
+    "Best Gaming Clips | Gameplay"
+   ]
+  },
+  {
+   "id": "bio",
+   "title": "Bio",
+   "now": "Top tier gameplay clips and montages.\nNew clips every day.\n#gaming",
+   "done": true,
+   "why": "A stranger arrives from one reel and decides in about three seconds. The bio tells them there's more of that here. Edit profile → Bio, 150 characters.",
+   "options": [
+    "The best GTA 6, Call of Duty, and EA Sports FC clips daily.\nWatch top gameplay montages and classic moments.",
+    "Daily gameplay clips for Call of Duty, GTA 6, and FC 27 fans.\nNew slowmo replays and kills every single day.",
+    "Top tier gaming clips and montages for true gamers.\nWatch daily gameplay from GTA 6, CoD, and FC 27."
+   ]
+  },
+  {
+   "id": "pin",
+   "title": "Pin your best reels",
+   "done": false,
+   "later": true,
+   "why": "Once 3 reels are up, the agent tells you which ones to pin here."
+  },
+  {
+   "id": "link",
+   "title": "Link",
+   "done": false,
+   "optional": true,
+   "now": "",
+   "why": "Leave the link empty until you have a specific destination such as a YouTube channel or community page to point followers to."
+  }
+ ]
+}

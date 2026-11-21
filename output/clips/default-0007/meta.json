@@ -1,0 +1,184 @@
+{
+  "id": "default-0007",
+  "source": "/tmp/reelagent-ratidu68/inbox/20261118-134440-ppxe_SHARE_20261118_0230540.mp4",
+  "moment": {
+    "peak": 13.25,
+    "start": 4.25,
+    "end": 19.25,
+    "score": 1.077
+  },
+  "copy": {
+    "quality": 8,
+    "what_happens": "The player fights the Scorpionlord boss in Black Myth Wukong during the shadowy assembly challenge.",
+    "is_cutscene_or_spoiler": false,
+    "graphic_violence": false,
+    "hook_options": [
+      "SCORPIONLORD ON DEATH ROW",
+      "STOP FIGHTING HIM NAKED",
+      "THE HARDEST BOSS IN WUKONG"
+    ],
+    "music_mood": "epic",
+    "edit_style": "highlight",
+    "meme_line": "when you finally figure out the scorpionlord moveset",
+    "freeze_line": "he strikes back",
+    "end_card": "Rate this /10",
+    "look": "cinematic",
+    "impact": true,
+    "instagram_caption": "Taking on the Scorpionlord in Black Myth Wukong during the shadowy assembly.\n\nRate this boss fight out of 10.",
+    "hashtags": [
+      "#BlackMythWukong",
+      "#Wukong",
+      "#Gaming",
+      "#GamingClips",
+      "#Gameplay"
+    ],
+    "source": "gemini",
+    "hook_text": "STOP FIGHTING HIM NAKED",
+    "hook_score": 48.6,
+    "hook_verdict": "WEAK",
+    "hook_table": [
+      {
+        "hook": "STOP FIGHTING HIM NAKED",
+        "score": 48.6,
+        "verdict": "WEAK",
+        "rank_in": 1
+      },
+      {
+        "hook": "THE HARDEST BOSS IN WUKONG",
+        "score": 30.0,
+        "verdict": "WEAK",
+        "rank_in": 2
+      },
+      {
+        "hook": "SCORPIONLORD ON DEATH ROW",
+        "score": 27.6,
+        "verdict": "WEAK",
+        "rank_in": 0
+      }
+    ],
+    "hook_formula": "Negative Command",
+    "caption_lint": {
+      "verdict": "REVIEW",
+      "problems": [
+        "ONE ASK: no call to action. Decide what this post is for"
+      ]
+    },
+    "human_score": [
+      62.0,
+      "REVIEW"
+    ],
+    "humanizer_changes": 0,
+    "song_ideas": [
+      {
+        "title": "Murder in My Mind",
+        "artist": "Kordhell",
+        "why": "Staple audio for aggressive outplays and competitive shooter highlights."
+      },
+      {
+        "title": "Aesthetic",
+        "artist": "Tollan Kim",
+        "why": "Popular background track for smooth sports goals and navigation clips."
+      },
+      {
+        "title": "METAMORPHOSIS",
+        "artist": "INTERWORLD",
+        "why": "Dominating fast-paced montage edits and high-speed vehicle clips on Reels."
+      }
+    ],
+    "style_why": "the critical parts, as you asked",
+    "owner_plan": {
+      "kind": "highlight",
+      "sound": "game",
+      "voice": "off",
+      "text": "none",
+      "note": "This is game black myth wukong, and the boss i am is scorpion lord, this challenge was know as shadowy assembly.",
+      "count": 3,
+      "length": 90
+    }
+  },
+  "render": {
+    "duration": 90.02,
+    "cover_ms": 1200,
+    "style": "highlight",
+    "asked_style": "highlight",
+    "fallback": "",
+    "payoff": 9.0,
+    "cuts": 6,
+    "end_card": false,
+    "fx": {
+      "look": "cinematic",
+      "glow": 0.14,
+      "vignette": 0.6,
+      "grain": 7,
+      "sharpen": 0.4,
+      "impact": [
+        "shake",
+        "flash",
+        "rgb_split"
+      ],
+      "cut_flash": true,
+      "notes": [
+        "cinematic film: soft contrast curve, teal-orange, grain",
+        "auto levels"
+      ]
+    },
+    "encoder": "libx264",
+    "layout": "blur",
+    "teaser": true,
+    "words": [],
+    "music": null,
+    "music_seek": 0.0,
+    "music_delay": 0.0,
+    "music_mood": "epic",
+    "voice": null,
+    "ig_sound_planned": false,
+    "moments": [
+      {
+        "peak": 13.25,
+        "start": 4.25,
+        "end": 19.25,
+        "score": 1.077
+      },
+      {
+        "peak": 70.25,
+        "start": 61.25,
+        "end": 76.25,
+        "score": 0.89
+      },
+      {
+        "peak": 30.75,
+        "start": 21.75,
+        "end": 36.75,
+        "score": 0.859
+      },
+      {
+        "peak": 46.25,
+        "start": 37.25,
+        "end": 52.25,
+        "score": 0.786
+      },
+      {
+        "peak": 91.75,
+        "start": 82.75,
+        "end": 97.75,
+        "score": 0.758
+      },
+      {
+        "peak": 143.25,
+        "start": 134.25,
+        "end": 149.25,
+        "score": 0.732
+      }
+    ],
+    "end_card_text": "",
+    "overrides": {
+      "music": false,
+      "voiceover": false,
+      "no_text": true,
+      "end_card": ""
+    },
+    "format": null,
+    "note_applied": "",
+    "trimmed_from": null
+  }
+}

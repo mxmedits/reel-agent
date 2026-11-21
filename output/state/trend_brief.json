@@ -1,0 +1,143 @@
+{
+  "summary": "Instagram's algorithm continues to prioritize high completion rates and immediate retention, making payoff-first hooks and concise edits essential for gaming content. Utilizing trending native audio and seamless loop mechanics is driving outsized reach for short-form clips.",
+  "formats": [
+    {
+      "name": "Payoff-First Teaser",
+      "how": "Show the craziest 2-second trickshot or crash at the very beginning before cutting to the intro setup."
+    },
+    {
+      "name": "Dynamic Subtitle Burn-In",
+      "how": "Use bold, high-contrast captions that pop word-by-word to retain viewer attention through the first 3 seconds."
+    }
+  ],
+  "edit_styles": {
+    "recommended": "replay",
+    "notes": "replay works best for complex plays; classic is ideal for quick shock value; slowmo enhances cinematic moments; freeze builds suspense before impact."
+  },
+  "reel_types": {
+    "recommended": [
+      "replay",
+      "classic",
+      "slowmo",
+      "montage"
+    ],
+    "new_ideas": [
+      "Side-by-side player cam reactions synchronized with in-game physics glitches.",
+      "In-game cinematic director-mode cinematic edits with seamless transition beats."
+    ]
+  },
+  "music": {
+    "genres": [
+      "Phonk",
+      "Hyperpop",
+      "Cinematic Hype",
+      "Electronic"
+    ],
+    "search_terms": [
+      "drift phonk",
+      "gaming phonk",
+      "epic orchestral",
+      "hype beat"
+    ],
+    "mood_bias": "hype",
+    "songs": [
+      {
+        "title": "Kryptonite",
+        "artist": "Three Doors Down (Phonk Remix)",
+        "mood": "hype",
+        "why": "Massive nostalgic hook trending on gaming transition clips this week."
+      },
+      {
+        "title": "Metamorphosis",
+        "artist": "INTERWORLD",
+        "mood": "intense",
+        "why": "Dominating high-speed montage and clutch outplays across Instagram Reels."
+      },
+      {
+        "title": "Aruarian Dance",
+        "artist": "Nujabes",
+        "mood": "chill",
+        "why": "Popular background track for aesthetic open-world cruising clips."
+      }
+    ]
+  },
+  "games": {
+    "gta6": {
+      "angles": [
+        "Hyper-realistic physics fails",
+        "Traffic chaos AI reactions",
+        "Cinematic open-world cruising"
+      ],
+      "timely": [
+        "Pre-launch speculation trends",
+        "Community physics breakdown comparisons"
+      ],
+      "hashtags": [
+        "#gta6",
+        "#gtavi",
+        "#gta6clips",
+        "#gamingreels"
+      ],
+      "avoid": [
+        "Unverified leaked footage",
+        "Clickbait rumor overlays"
+      ]
+    },
+    "cod": {
+      "angles": [
+        "Insane sniper flick shots",
+        "Hot mic reactions",
+        "Clutch 1v4 search and destroy"
+      ],
+      "timely": [
+        "Current season weapon meta updates",
+        "Ranked play grind highlights"
+      ],
+      "hashtags": [
+        "#callofduty",
+        "#codclips",
+        "#warzone",
+        "#codmw3"
+      ],
+      "avoid": [
+        "Full unedited match gameplay",
+        "Outdated weapon balancing clips"
+      ]
+    },
+    "fc27": {
+      "angles": [
+        "Outrageous last-minute knuckleball goals",
+        "Goalkeeper blunder compilations",
+        "Skill move tutorial highlights"
+      ],
+      "timely": [
+        "Weekend league rage moments",
+        "Team of the week pack walkouts"
+      ],
+      "hashtags": [
+        "#fc27",
+        "#easportsfc",
+        "#fifaultimateteam",
+        "#fc27goals"
+      ],
+      "avoid": [
+        "Standard untucked basic tap-in goals",
+        "Menu simulation screens"
+      ]
+    }
+  },
+  "caption_tips": [
+    "Keep captions under 8 words to encourage quick re-watches while reading.",
+    "Ask a polarizing question in the caption to drive comment section debates.",
+    "Avoid generic hashtags; mix 3 niche game tags with 2 broad gaming tags."
+  ],
+  "algorithm_updates": [
+    "Instagram's recent ranking adjustments heavily reward original audio usage and content that achieves high watch-time completion percentages within the first 3 seconds."
+  ],
+  "sources": [
+    "https://about.instagram.com/blog",
+    "https://creators.instagram.com/"
+  ],
+  "date": "2026-11-20",
+  "provider": "gemini"
+}

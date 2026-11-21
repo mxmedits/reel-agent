@@ -1,0 +1,114 @@
+{
+  "id": "default-0004",
+  "source": "/tmp/reelagent-709n1ptd/inbox/20261118-093615-l9c3_SHARE_20261118_0230540.mp4",
+  "moment": {
+    "peak": 13.25,
+    "start": 1.25,
+    "end": 25.25,
+    "score": 1.077
+  },
+  "copy": {
+    "quality": 8,
+    "what_happens": "A player fights the Scorpionlord boss in Black Myth: Wukong, executing precise combat maneuvers and dodging heavy attacks.",
+    "is_cutscene_or_spoiler": false,
+    "graphic_violence": false,
+    "hook_options": [
+      "NEVER FIGHT THIS BOSS",
+      "50 TRIES. 1 SURVIVOR.",
+      "THE HARDEST DODGE"
+    ],
+    "music_mood": "intense",
+    "edit_style": "replay",
+    "meme_line": "POV: you thought you could easily beat the Scorpionlord",
+    "freeze_line": "no hesitation",
+    "end_card": "Rate this dodge /10",
+    "look": "cinematic",
+    "impact": true,
+    "instagram_caption": "Black Myth: Wukong boss fight against the Scorpionlord.\n\nSend this to your duo who rage quits soulslikes.",
+    "hashtags": [
+      "#BlackMythWukong",
+      "#Gaming",
+      "#Gamer",
+      "#GamingClips",
+      "#Gameplay"
+    ],
+    "source": "gemini",
+    "hook_text": "NEVER FIGHT THIS BOSS",
+    "hook_score": 48.6,
+    "hook_verdict": "WEAK",
+    "hook_table": [
+      {
+        "hook": "NEVER FIGHT THIS BOSS",
+        "score": 48.6,
+        "verdict": "WEAK",
+        "rank_in": 0
+      },
+      {
+        "hook": "50 TRIES. 1 SURVIVOR.",
+        "score": 48.2,
+        "verdict": "WEAK",
+        "rank_in": 1
+      },
+      {
+        "hook": "THE HARDEST DODGE",
+        "score": 25.2,
+        "verdict": "WEAK",
+        "rank_in": 2
+      }
+    ],
+    "hook_formula": "Negative Command",
+    "caption_lint": {
+      "verdict": "REVIEW",
+      "problems": [
+        "TAG PLACEMENT: a hashtag is inside the visible window, spending feed space on a label",
+        "ONE ASK: no call to action. Decide what this post is for"
+      ]
+    },
+    "human_score": [
+      62.0,
+      "REVIEW"
+    ],
+    "humanizer_changes": 0,
+    "style_why": "trying a type the page hasn't used lately"
+  },
+  "render": {
+    "duration": 17.42,
+    "cover_ms": 12250,
+    "style": "replay",
+    "asked_style": "replay",
+    "fallback": "",
+    "payoff": 12.0,
+    "cuts": 2,
+    "end_card": false,
+    "fx": {
+      "look": "cinematic",
+      "glow": 0.14,
+      "vignette": 0.6,
+      "grain": 7,
+      "sharpen": 0.4,
+      "impact": [
+        "shake",
+        "flash",
+        "rgb_split"
+      ],
+      "cut_flash": true,
+      "notes": [
+        "cinematic film: soft contrast curve, teal-orange, grain",
+        "auto levels",
+        "dark clip lifted"
+      ]
+    },
+    "encoder": "libx264",
+    "layout": "blur",
+    "teaser": true,
+    "words": [],
+    "music": "beat:intense",
+    "music_seek": 0.0,
+    "music_delay": 0.0,
+    "music_mood": "intense",
+    "voice": null,
+    "ig_sound_planned": false,
+    "moments": [],
+    "end_card_text": ""
+  }
+}

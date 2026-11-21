@@ -1,0 +1,114 @@
+{
+  "id": "default-0005",
+  "source": "/tmp/reelagent-709n1ptd/inbox/20261118-093615-l9c3_SHARE_20261118_0230540.mp4",
+  "moment": {
+    "peak": 70.25,
+    "start": 55.85,
+    "end": 79.85,
+    "score": 0.89
+  },
+  "copy": {
+    "quality": 8,
+    "what_happens": "A player expertly dodges and counters the Scorpionlord boss in Black Myth Wukong.",
+    "is_cutscene_or_spoiler": false,
+    "graphic_violence": false,
+    "hook_options": [
+      "5 BOSSES. #4 IS THE ONE.",
+      "WATCH THIS",
+      "THE FASTEST WAY"
+    ],
+    "music_mood": "epic",
+    "edit_style": "replay",
+    "meme_line": "POV: you finally learned the boss's attack pattern",
+    "freeze_line": "perfect dodge",
+    "end_card": "Rate this /10",
+    "look": "cinematic",
+    "impact": true,
+    "instagram_caption": "Dodging the Scorpionlord boss attack in Black Myth Wukong.\n\nSend this to your duo who struggles with bosses.",
+    "hashtags": [
+      "#Gaming",
+      "#BlackMythWukong",
+      "#Gamer",
+      "#Gameplay",
+      "#Clips"
+    ],
+    "source": "gemini",
+    "hook_text": "5 BOSSES. #4 IS THE ONE.",
+    "hook_score": 35.6,
+    "hook_verdict": "WEAK",
+    "hook_table": [
+      {
+        "hook": "5 BOSSES. #4 IS THE ONE.",
+        "score": 35.6,
+        "verdict": "WEAK",
+        "rank_in": 0
+      },
+      {
+        "hook": "WATCH THIS",
+        "score": 29.4,
+        "verdict": "WEAK",
+        "rank_in": 1
+      },
+      {
+        "hook": "THE FASTEST WAY",
+        "score": 25.2,
+        "verdict": "WEAK",
+        "rank_in": 2
+      }
+    ],
+    "hook_formula": "Numbered With A Favourite",
+    "caption_lint": {
+      "verdict": "REVIEW",
+      "problems": [
+        "TAG PLACEMENT: a hashtag is inside the visible window, spending feed space on a label",
+        "ONE ASK: no call to action. Decide what this post is for"
+      ]
+    },
+    "human_score": [
+      62.0,
+      "REVIEW"
+    ],
+    "humanizer_changes": 0,
+    "style_why": "fits what happens in the clip"
+  },
+  "render": {
+    "duration": 19.82,
+    "cover_ms": 14650,
+    "style": "replay",
+    "asked_style": "replay",
+    "fallback": "",
+    "payoff": 14.4,
+    "cuts": 2,
+    "end_card": false,
+    "fx": {
+      "look": "cinematic",
+      "glow": 0.14,
+      "vignette": 0.6,
+      "grain": 7,
+      "sharpen": 0.4,
+      "impact": [
+        "shake",
+        "flash",
+        "rgb_split"
+      ],
+      "cut_flash": true,
+      "notes": [
+        "cinematic film: soft contrast curve, teal-orange, grain",
+        "auto levels",
+        "dark clip lifted"
+      ]
+    },
+    "encoder": "libx264",
+    "layout": "blur",
+    "teaser": true,
+    "words": [],
+    "music": "beat:epic",
+    "music_seek": 0.0,
+    "music_delay": 0.0,
+    "music_mood": "epic",
+    "voice": null,
+    "ig_sound_planned": false,
+    "moments": [],
+    "end_card_text": ""
+  }
+}

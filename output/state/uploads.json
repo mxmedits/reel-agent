@@ -1,0 +1,67 @@
+{
+ "inbox/20261117-034918-t6i5": {
+  "name": "video-54_singular_display.mov",
+  "attempts": 1,
+  "at": "2026-11-17T08:50:32+00:00",
+  "status": "done",
+  "reels": [
+   "default-0001",
+   "default-0002",
+   "default-0003"
+  ],
+  "note": ""
+ },
+ "inbox/20261118-054203-408x": {
+  "name": "video-54_singular_display.mov",
+  "attempts": 1,
+  "at": "2026-11-18T10:42:33+00:00",
+  "status": "done",
+  "reels": [
+   "cod-0001",
+   "cod-0002",
+   "cod-0003"
+  ],
+  "note": ""
+ },
+ "inbox/20261118-093615-l9c3": {
+  "name": "SHARE_20261118_0230540.mp4",
+  "attempts": 1,
+  "at": "2026-11-18T14:36:42+00:00",
+  "status": "done",
+  "reels": [
+   "default-0004",
+   "default-0005",
+   "default-0006"
+  ],
+  "note": ""
+ },
+ "inbox/20261118-134440-ppxe": {
+  "name": "SHARE_20261118_0230540.mp4",
+  "attempts": 1,
+  "at": "2026-11-18T18:45:14+00:00",
+  "plan": "Highlight video, 1:30 min, game sound only, no voiceover, no title",
+  "status": "done",
+  "reels": [
+   "default-0007"
+  ],
+  "note": ""
+ },
+ "inbox/20261119-164526-id10": {
+  "name": "video.mov",
+  "attempts": 1,
+  "at": "2026-11-19T21:46:08+00:00",
+  "plan": "1 short reel, no voiceover, no title",
+  "status": "nothing",
+  "reels": [],
+  "note": "no moment was strong enough to post"
+ },
+ "inbox/20261119-165245-kn0p": {
+  "name": "video.mov",
+  "attempts": 1,
+  "at": "2026-11-19T22:00:47+00:00",
+  "plan": "1 short reel, game sound only, no voiceover, no title",
+  "status": "nothing",
+  "reels": [],
+  "note": "no moment was strong enough to post"
+ }
+}

@@ -1,0 +1,114 @@
+{
+  "id": "default-0001",
+  "source": "/tmp/reelagent-an47eo7w/inbox/20261117-034918-t6i5_video-54_singular_display.mov",
+  "moment": {
+    "peak": 138.75,
+    "start": 123.87,
+    "end": 147.87,
+    "score": 3.716
+  },
+  "copy": {
+    "quality": 7,
+    "what_happens": "",
+    "is_cutscene_or_spoiler": false,
+    "graphic_violence": false,
+    "hook_options": [
+      "DID NOT EXPECT THAT",
+      "WATCH TILL THE END",
+      "WAIT FOR IT"
+    ],
+    "music_mood": "hype",
+    "instagram_caption": "Gaming clip #1. Rate it out of 10 in the comments.",
+    "hashtags": [
+      "#Gaming",
+      "#Gamer",
+      "#GamingClips",
+      "#Gameplay",
+      "#Clips"
+    ],
+    "source": "template",
+    "hook_text": "DID NOT EXPECT THAT",
+    "hook_score": 42.0,
+    "hook_verdict": "WEAK",
+    "hook_table": [
+      {
+        "hook": "DID NOT EXPECT THAT",
+        "score": 42.0,
+        "verdict": "WEAK",
+        "rank_in": 0
+      },
+      {
+        "hook": "WATCH TILL THE END",
+        "score": 34.2,
+        "verdict": "WEAK",
+        "rank_in": 1
+      },
+      {
+        "hook": "WAIT FOR IT",
+        "score": 25.2,
+        "verdict": "WEAK",
+        "rank_in": 2
+      }
+    ],
+    "hook_formula": "unclassified",
+    "look": null,
+    "edit_style": "slowmo",
+    "meme_line": "",
+    "freeze_line": "",
+    "end_card": "",
+    "caption_lint": {
+      "verdict": "FIX",
+      "problems": [
+        "HASHTAGS: 6 tags, over Instagram's cap of 5. Tags past the fifth do not count and the block reads as old",
+        "TAG PLACEMENT: a hashtag is inside the visible window, spending feed space on a label",
+        "ONE ASK: no call to action. Decide what this post is for"
+      ]
+    },
+    "human_score": [
+      62.0,
+      "REVIEW"
+    ],
+    "humanizer_changes": 0,
+    "style_why": "trying a type the page hasn't used lately"
+  },
+  "render": {
+    "duration": 26.82,
+    "cover_ms": 1150,
+    "style": "slowmo",
+    "asked_style": "slowmo",
+    "fallback": "",
+    "payoff": 16.98,
+    "cuts": 2,
+    "end_card": true,
+    "fx": {
+      "look": "cinematic",
+      "glow": 0.14,
+      "vignette": 0.6,
+      "grain": 7,
+      "sharpen": 0.4,
+      "impact": [
+        "shake",
+        "flash",
+        "rgb_split"
+      ],
+      "cut_flash": true,
+      "notes": [
+        "cinematic film: soft contrast curve, teal-orange, grain",
+        "auto levels",
+        "dark clip lifted"
+      ]
+    },
+    "encoder": "libx264",
+    "layout": "blur",
+    "teaser": true,
+    "words": [],
+    "music": null,
+    "music_seek": 0.0,
+    "music_delay": 0.0,
+    "music_mood": "hype",
+    "voice": null,
+    "ig_sound_planned": false,
+    "moments": [],
+    "end_card_text": "Rate this /10"
+  }
+}

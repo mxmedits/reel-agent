@@ -1,0 +1,132 @@
+{
+  "id": "cod-0002",
+  "source": "/tmp/reelagent-fzzncird/inbox/20261118-054203-408x_video-54_singular_display.mov",
+  "moment": {
+    "peak": 77.75,
+    "start": 64.55,
+    "end": 88.55,
+    "score": 0.204
+  },
+  "copy": {
+    "quality": 8,
+    "what_happens": "Player runs through the shipment map containers in Call of Duty and secures multiple rapid kills under intense close-quarters pressure.",
+    "is_cutscene_or_spoiler": false,
+    "graphic_violence": false,
+    "hook_options": [
+      "3 KILLS, 1 CORRIDOR, 0 SECONDS",
+      "STOP RELOADING IN THE OPEN",
+      "NOBODY TELLS YOU HOW FAST SHIPMENT IS"
+    ],
+    "music_mood": "hype",
+    "edit_style": "meme_bar",
+    "meme_line": "POV: you survived the first two seconds on shipment",
+    "freeze_line": "he had no chance",
+    "end_card": "Clutch or luck?",
+    "look": "tactical",
+    "impact": true,
+    "instagram_caption": "Call of Duty shipment multi kill breakdown.\n\nSend this to your duo who panics in close quarters.\n\nAI voiceover",
+    "hashtags": [
+      "#CallOfDuty",
+      "#COD",
+      "#Warzone",
+      "#GamingClips",
+      "#FPS"
+    ],
+    "source": "gemini",
+    "hook_text": "3 KILLS, 1 CORRIDOR, 0 SECONDS",
+    "hook_score": 62.6,
+    "hook_verdict": "OK",
+    "hook_table": [
+      {
+        "hook": "3 KILLS, 1 CORRIDOR, 0 SECONDS",
+        "score": 62.6,
+        "verdict": "OK",
+        "rank_in": 0
+      },
+      {
+        "hook": "NOBODY TELLS YOU HOW FAST SHIPMENT IS",
+        "score": 52.2,
+        "verdict": "OK",
+        "rank_in": 2
+      },
+      {
+        "hook": "STOP RELOADING IN THE OPEN",
+        "score": 51.0,
+        "verdict": "OK",
+        "rank_in": 1
+      }
+    ],
+    "hook_formula": "Numbered With A Favourite",
+    "caption_lint": {
+      "verdict": "REVIEW",
+      "problems": [
+        "TAG PLACEMENT: a hashtag is inside the visible window, spending feed space on a label",
+        "ONE ASK: no call to action. Decide what this post is for"
+      ]
+    },
+    "human_score": [
+      62.0,
+      "REVIEW"
+    ],
+    "humanizer_changes": 0,
+    "voiceover": [
+      {
+        "t": 0.3,
+        "text": "Watch this shipment chaos unfold right now."
+      },
+      {
+        "t": 3.5,
+        "text": "We're pushing hard through every single container."
+      },
+      {
+        "t": 7.0,
+        "text": "Enemies are swarming from every angle."
+      },
+      {
+        "t": 11.2,
+        "text": "Time to watch it again from the watch."
+      }
+    ],
+    "style_why": "trying a type the page hasn't used lately"
+  },
+  "render": {
+    "duration": 25.62,
+    "cover_ms": 1150,
+    "style": "meme_bar",
+    "asked_style": "meme_bar",
+    "fallback": "",
+    "payoff": 14.8,
+    "cuts": 2,
+    "end_card": false,
+    "fx": {
+      "look": "tactical",
+      "glow": 0.0,
+      "vignette": 0.25,
+      "grain": 0,
+      "sharpen": 0.85,
+      "impact": [
+        "shake",
+        "flash",
+        "rgb_split"
+      ],
+      "cut_flash": true,
+      "notes": [
+        "tactical teal-orange: crisp, deep blacks, punchy contrast",
+        "auto colour (black point 10)",
+        "filmed off a screen: straightened, cropped, de-noised, colour restored"
+      ]
+    },
+    "encoder": "libx264",
+    "layout": "zoom",
+    "teaser": true,
+    "words": [],
+    "music": null,
+    "music_seek": 0.0,
+    "music_delay": 0.0,
+    "music_mood": "hype",
+    "voice": "/home/runner/work/reel-agent/reel-agent/data/output/clips/cod-0002/voiceover.wav",
+    "ig_sound_planned": false,
+    "moments": [],
+    "end_card_text": ""
+  }
+}

@@ -772,3 +772,5 @@
 [2026-11-27 17:19:24] 🎵 Instagram's music for apps: music trending: 0 (error: Instagram API error (200/5258005): API access blocked.), original trending: 0 (error: Instagram API error (200/5258005): API access blocked.), music search: 0 (error: Instagram API error (200/5258005): API access blocked.)
 [2026-11-27 17:19:25] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
 [2026-11-27 17:33:49] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
+[2026-11-27 17:48:48] ! replies: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
+[2026-11-27 17:48:48] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412

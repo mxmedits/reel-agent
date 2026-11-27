@@ -1,6 +1,6 @@
 {
  "v": 1,
- "updated": "2026-11-27T21:38:04+00:00",
+ "updated": "2026-11-27T21:41:57+00:00",
  "note": "",
  "agent": {
   "paused": false,
@@ -12,7 +12,7 @@
   "handle": "@average_gamingclipz",
   "timezone": "America/Toronto",
   "version": "a405df1",
-  "run": "46071547520"
+  "run": "46071940994"
  },
  "schedule": {
   "times": [
@@ -27,7 +27,7 @@
    "10:00",
    "23:30"
   ],
-  "now_local": "2026-11-27T16:38-05:00"
+  "now_local": "2026-11-27T16:41-05:00"
  },
  "settings": {
   "handle": "@average_gamingclipz",
@@ -470,7 +470,6 @@
   "read_at": "2026-11-23T05:06:40+00:00"
  },
  "log": [
-  "[2026-11-27 00:32:50] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-27 00:47:49] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-27 01:02:51] ! replies: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-27 01:02:51] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
@@ -589,6 +588,7 @@
   "[2026-11-27 21:07:57] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-27 21:22:59] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-27 21:38:03] ! replies: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
-  "[2026-11-27 21:38:03] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412"
+  "[2026-11-27 21:38:03] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
+  "[2026-11-27 21:41:57] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412"
  ]
 }

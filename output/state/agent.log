@@ -752,3 +752,6 @@
 [2026-11-27 13:48:10] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
 [2026-11-27 14:03:07] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
 [2026-11-27 14:18:09] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
+[2026-11-27 14:33:20] ! replies: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
+[2026-11-27 14:33:21] 📊 Only 0 reel(s) with stats so far. The audit needs at least 3; it will run again later.
+[2026-11-27 14:33:21] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412

@@ -1,0 +1,151 @@
+{
+  "id": "default-0006",
+  "source": "/tmp/reelagent-709n1ptd/inbox/20261118-093615-l9c3_SHARE_20261118_0230540.mp4",
+  "moment": {
+    "peak": 13.25,
+    "start": 1.25,
+    "end": 25.25,
+    "score": 1.077
+  },
+  "copy": {
+    "quality": 9,
+    "what_happens": "The player unleashes a devastating counter-attack against the Scorpionlord boss in Black Myth Wukong, executing a massive hit during an intense combat montage.",
+    "is_cutscene_or_spoiler": false,
+    "graphic_violence": false,
+    "hook_options": [
+      "6 BOSSES. #4 IS PURE PAIN.",
+      "THE HARDEST FIGHT IN WUKONG",
+      "60 SECONDS. ZERO MISTAKES."
+    ],
+    "music_mood": "epic",
+    "edit_style": "montage",
+    "meme_line": "POV: you finally figure out the boss's attack pattern",
+    "freeze_line": "he is done",
+    "end_card": "Rate this boss /10",
+    "look": "cinematic",
+    "impact": true,
+    "instagram_caption": "Black Myth Wukong Scorpionlord boss fight montage.\n\nSend this to your duo who needs to see this comeback.",
+    "hashtags": [
+      "#Gaming",
+      "#BlackMythWukong",
+      "#GamingClips",
+      "#Gameplay",
+      "#Clips"
+    ],
+    "source": "gemini",
+    "hook_text": "60 SECONDS. ZERO MISTAKES.",
+    "hook_score": 60.2,
+    "hook_verdict": "OK",
+    "hook_table": [
+      {
+        "hook": "60 SECONDS. ZERO MISTAKES.",
+        "score": 60.2,
+        "verdict": "OK",
+        "rank_in": 2
+      },
+      {
+        "hook": "6 BOSSES. #4 IS PURE PAIN.",
+        "score": 35.6,
+        "verdict": "WEAK",
+        "rank_in": 0
+      },
+      {
+        "hook": "THE HARDEST FIGHT IN WUKONG",
+        "score": 30.0,
+        "verdict": "WEAK",
+        "rank_in": 1
+      }
+    ],
+    "hook_formula": "Numbered With A Favourite",
+    "caption_lint": {
+      "verdict": "REVIEW",
+      "problems": [
+        "TAG PLACEMENT: a hashtag is inside the visible window, spending feed space on a label",
+        "ONE ASK: no call to action. Decide what this post is for"
+      ]
+    },
+    "human_score": [
+      62.0,
+      "REVIEW"
+    ],
+    "humanizer_changes": 0,
+    "style_why": "plenty of strong moments in this recording"
+  },
+  "render": {
+    "duration": 12.92,
+    "cover_ms": 900,
+    "style": "montage",
+    "asked_style": "montage",
+    "fallback": "",
+    "payoff": 11.24,
+    "cuts": 6,
+    "end_card": true,
+    "fx": {
+      "look": "cinematic",
+      "glow": 0.14,
+      "vignette": 0.6,
+      "grain": 7,
+      "sharpen": 0.4,
+      "impact": [
+        "shake",
+        "flash",
+        "rgb_split"
+      ],
+      "cut_flash": true,
+      "notes": [
+        "cinematic film: soft contrast curve, teal-orange, grain",
+        "auto levels",
+        "dark clip lifted"
+      ]
+    },
+    "encoder": "libx264",
+    "layout": "blur",
+    "teaser": true,
+    "words": [],
+    "music": "beat:epic",
+    "music_seek": 0.0,
+    "music_delay": 0.0,
+    "music_mood": "epic",
+    "voice": null,
+    "ig_sound_planned": false,
+    "moments": [
+      {
+        "peak": 13.25,
+        "start": 1.25,
+        "end": 25.25,
+        "score": 1.077
+      },
+      {
+        "peak": 70.25,
+        "start": 55.85,
+        "end": 79.85,
+        "score": 0.89
+      },
+      {
+        "peak": 143.25,
+        "start": 128.85,
+        "end": 152.85,
+        "score": 0.732
+      },
+      {
+        "peak": 168.75,
+        "start": 150.92,
+        "end": 174.92,
+        "score": 0.541
+      },
+      {
+        "peak": 46.25,
+        "start": 31.85,
+        "end": 55.85,
+        "score": 0.107
+      },
+      {
+        "peak": 112.75,
+        "start": 104.35,
+        "end": 128.35,
+        "score": -0.195
+      }
+    ],
+    "end_card_text": "Rate this boss /10"
+  }
+}

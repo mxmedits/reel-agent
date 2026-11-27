@@ -1,0 +1,132 @@
+{
+  "id": "cod-0001",
+  "source": "/tmp/reelagent-fzzncird/inbox/20261118-054203-408x_video-54_singular_display.mov",
+  "moment": {
+    "peak": 216.25,
+    "start": 207.85,
+    "end": 231.85,
+    "score": 0.454
+  },
+  "copy": {
+    "quality": 8,
+    "what_happens": "A player throws a grenade around a shipping container in Call of Duty, securing a quick elimination.",
+    "is_cutscene_or_spoiler": false,
+    "graphic_violence": false,
+    "hook_options": [
+      "3 KILLS, 1 GRENADE, 0 SECONDS",
+      "STOP MISSING YOUR CORNERS",
+      "THE FASTEST THROW IN CALL OF DUTY"
+    ],
+    "music_mood": "hype",
+    "edit_style": "pov",
+    "meme_line": "POV: you trust your tactical throw in Call of Duty",
+    "freeze_line": "he has no idea",
+    "end_card": "Clutch or luck?",
+    "look": "tactical",
+    "impact": true,
+    "instagram_caption": "Call of Duty clean corner grenade play.\n\nSend this to your duo who needs better timing.\n\nAI voiceover",
+    "hashtags": [
+      "#CallOfDuty",
+      "#COD",
+      "#Warzone",
+      "#Gaming",
+      "#FPS"
+    ],
+    "source": "gemini",
+    "hook_text": "3 KILLS, 1 GRENADE, 0 SECONDS",
+    "hook_score": 62.6,
+    "hook_verdict": "OK",
+    "hook_table": [
+      {
+        "hook": "3 KILLS, 1 GRENADE, 0 SECONDS",
+        "score": 62.6,
+        "verdict": "OK",
+        "rank_in": 0
+      },
+      {
+        "hook": "STOP MISSING YOUR CORNERS",
+        "score": 49.8,
+        "verdict": "WEAK",
+        "rank_in": 1
+      },
+      {
+        "hook": "THE FASTEST THROW IN CALL OF DUTY",
+        "score": 30.0,
+        "verdict": "WEAK",
+        "rank_in": 2
+      }
+    ],
+    "hook_formula": "Numbered With A Favourite",
+    "caption_lint": {
+      "verdict": "REVIEW",
+      "problems": [
+        "TAG PLACEMENT: a hashtag is inside the visible window, spending feed space on a label",
+        "ONE ASK: no call to action. Decide what this post is for"
+      ]
+    },
+    "human_score": [
+      62.0,
+      "REVIEW"
+    ],
+    "humanizer_changes": 0,
+    "voiceover": [
+      {
+        "t": 0.3,
+        "text": "Watch this clean grenade throw"
+      },
+      {
+        "t": 3.1,
+        "text": "Got em running scared"
+      },
+      {
+        "t": 6.8,
+        "text": "Boom right on target"
+      },
+      {
+        "t": 8.0,
+        "text": "Pure throw"
+      }
+    ],
+    "style_why": "fits what happens in the clip"
+  },
+  "render": {
+    "duration": 24.0,
+    "cover_ms": 8650,
+    "style": "pov",
+    "asked_style": "pov",
+    "fallback": "",
+    "payoff": 8.4,
+    "cuts": 1,
+    "end_card": false,
+    "fx": {
+      "look": "tactical",
+      "glow": 0.0,
+      "vignette": 0.25,
+      "grain": 0,
+      "sharpen": 0.85,
+      "impact": [
+        "shake",
+        "flash",
+        "rgb_split"
+      ],
+      "cut_flash": true,
+      "notes": [
+        "tactical teal-orange: crisp, deep blacks, punchy contrast",
+        "auto colour (black point 31)",
+        "filmed off a screen: straightened, cropped, de-noised, colour restored"
+      ]
+    },
+    "encoder": "libx264",
+    "layout": "zoom",
+    "teaser": true,
+    "words": [],
+    "music": null,
+    "music_seek": 0.0,
+    "music_delay": 0.0,
+    "music_mood": "hype",
+    "voice": "/home/runner/work/reel-agent/reel-agent/data/output/clips/cod-0001/voiceover.wav",
+    "ig_sound_planned": false,
+    "moments": [],
+    "end_card_text": ""
+  }
+}

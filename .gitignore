@@ -1,0 +1,15 @@
+# the agent's records. Never keys, never full-size videos.
+.env
+inbox/
+music/
+output/clips/*/reel.mp4
+output/clips/*/reel_ig*.mp4
+output/sources/
+*.mov
+*.mkv
+output/clips/*/voiceover.wav
+output/clips/*/voiceover.raw.wav
+output/clips/*/beat.wav
+output/state/voices/
+output/state/*.db-wal
+output/state/*.db-shm

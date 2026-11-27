@@ -1,0 +1,131 @@
+{
+  "id": "default-0003",
+  "source": "/tmp/reelagent-an47eo7w/inbox/20261117-034918-t6i5_video-54_singular_display.mov",
+  "moment": {
+    "peak": 138.75,
+    "start": 123.87,
+    "end": 147.87,
+    "score": 3.716
+  },
+  "copy": {
+    "quality": 7,
+    "what_happens": "",
+    "is_cutscene_or_spoiler": false,
+    "graphic_violence": false,
+    "hook_options": [
+      "TOP 3 GAMING MOMENTS",
+      "3 CLIPS, 1 WINNER",
+      "RANKING MY BEST 3 CLIPS"
+    ],
+    "music_mood": "hype",
+    "instagram_caption": "Top 3 Gaming moments from one session. Which one takes it: 1, 2 or 3?",
+    "hashtags": [
+      "#Gaming",
+      "#Gamer",
+      "#GamingClips",
+      "#Gameplay",
+      "#Clips"
+    ],
+    "source": "template",
+    "hook_text": "RANKING MY BEST 3 CLIPS",
+    "hook_score": 51.8,
+    "hook_verdict": "OK",
+    "hook_table": [
+      {
+        "hook": "RANKING MY BEST 3 CLIPS",
+        "score": 51.8,
+        "verdict": "OK",
+        "rank_in": 2
+      },
+      {
+        "hook": "3 CLIPS, 1 WINNER",
+        "score": 48.2,
+        "verdict": "WEAK",
+        "rank_in": 1
+      },
+      {
+        "hook": "TOP 3 GAMING MOMENTS",
+        "score": 45.2,
+        "verdict": "WEAK",
+        "rank_in": 0
+      }
+    ],
+    "hook_formula": "unclassified",
+    "look": null,
+    "edit_style": "top3",
+    "meme_line": "",
+    "freeze_line": "",
+    "end_card": "Which one wins?",
+    "caption_lint": {
+      "verdict": "REVIEW",
+      "problems": [
+        "TAG PLACEMENT: a hashtag is inside the visible window, spending feed space on a label"
+      ]
+    },
+    "human_score": [
+      62.0,
+      "REVIEW"
+    ],
+    "humanizer_changes": 0,
+    "style_why": "plenty of strong moments in this recording"
+  },
+  "render": {
+    "duration": 15.62,
+    "cover_ms": 14050,
+    "style": "top3",
+    "asked_style": "top3",
+    "fallback": "",
+    "payoff": 13.8,
+    "cuts": 3,
+    "end_card": true,
+    "fx": {
+      "look": "cinematic",
+      "glow": 0.14,
+      "vignette": 0.6,
+      "grain": 7,
+      "sharpen": 0.4,
+      "impact": [
+        "shake",
+        "flash",
+        "rgb_split"
+      ],
+      "cut_flash": true,
+      "notes": [
+        "cinematic film: soft contrast curve, teal-orange, grain",
+        "auto levels",
+        "dark clip lifted"
+      ]
+    },
+    "encoder": "libx264",
+    "layout": "blur",
+    "teaser": true,
+    "words": [],
+    "music": null,
+    "music_seek": 0.0,
+    "music_delay": 0.0,
+    "music_mood": "hype",
+    "voice": null,
+    "ig_sound_planned": false,
+    "moments": [
+      {
+        "peak": 138.75,
+        "start": 123.87,
+        "end": 147.87,
+        "score": 3.716
+      },
+      {
+        "peak": 91.25,
+        "start": 76.37,
+        "end": 100.37,
+        "score": 3.541
+      },
+      {
+        "peak": 6.75,
+        "start": 0.0,
+        "end": 24.0,
+        "score": 2.18
+      }
+    ],
+    "end_card_text": "Which one wins?"
+  }
+}

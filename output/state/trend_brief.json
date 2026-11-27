@@ -1,0 +1,135 @@
+{
+  "summary": "Instagram Reels algorithms heavily favor high-retention first seconds with clear text hooks and original gameplay without watermarks. High-energy cinematic edits paired with trending phonk and heavy bass tracks are driving peak shares and saves.",
+  "formats": [
+    {
+      "name": "Payoff-First Teaser",
+      "how": "Start with the most insane 2-second clip of the gameplay climax, then rewind to show how it happened."
+    },
+    {
+      "name": "Contextual POV Box",
+      "how": "Place a relatable gaming scenario box at the top of the screen during high-stress multiplayer moments."
+    }
+  ],
+  "edit_styles": {
+    "recommended": "replay",
+    "notes": "Classic works for quick laughs; replay is dominating high-skill sports and shooter moments; slowmo fits cinematic story beats."
+  },
+  "reel_types": {
+    "recommended": [
+      "replay",
+      "classic",
+      "slowmo",
+      "pov"
+    ],
+    "new_ideas": [
+      "Side-by-side split screen comparing modern gameplay physics with classic franchise nostalgia.",
+      "In-world camera mode cinematic mini-tours with trending ambient soundscapes."
+    ]
+  },
+  "music": {
+    "genres": [
+      "phonk",
+      "synthwave",
+      "orchestral hype"
+    ],
+    "search_terms": [
+      "drift phonk",
+      "gaming phonk",
+      "epic orchestral",
+      "hype beat"
+    ],
+    "mood_bias": "hype",
+    "songs": [
+      {
+        "title": "Metamorphosis",
+        "artist": "INTERWORLD",
+        "mood": "hype",
+        "why": "Dominating high-speed gaming montages and clutch highlight reels."
+      },
+      {
+        "title": "Aesthetic",
+        "artist": "Tebi Dautaj",
+        "mood": "intense",
+        "why": "Popular for smooth tactical plays and clean elimination edits."
+      },
+      {
+        "title": "NEON BLADE",
+        "artist": "MoonDeity",
+        "mood": "hype",
+        "why": "Go-to track for aggressive multiplayer pushes and fast-paced action."
+      }
+    ]
+  },
+  "games": {
+    "gta6": {
+      "angles": [
+        "physics engine insanity",
+        "police AI chaos",
+        "open-world immersion"
+      ],
+      "timely": [
+        "Latest community discoveries and physics test clips"
+      ],
+      "hashtags": [
+        "#gta6",
+        "#gta6clips",
+        "#gamingreels",
+        "#gtagameplay"
+      ],
+      "avoid": [
+        "Leaks, unverified rumors, and pre-release footage"
+      ]
+    },
+    "cod": {
+      "angles": [
+        "insane sniper flicks",
+        "hot mic reactions",
+        "last-second wins"
+      ],
+      "timely": [
+        "New season weapon meta and map moments"
+      ],
+      "hashtags": [
+        "#cod",
+        "#callofduty",
+        "#warzone",
+        "#gamingclips"
+      ],
+      "avoid": [
+        "Staged lobby boosting clips and toxic chat audio"
+      ]
+    },
+    "fc27": {
+      "angles": [
+        "last-minute wondergoals",
+        "glitched physics",
+        "rage reactions"
+      ],
+      "timely": [
+        "Weekend League highlights and ultimate team pack moments"
+      ],
+      "hashtags": [
+        "#fc27",
+        "#easportsfc",
+        "#fifaclips",
+        "#fut"
+      ],
+      "avoid": [
+        "Re-uploaded goals from professional esports broadcasts without credit"
+      ]
+    }
+  },
+  "caption_tips": [
+    "Keep text concise and end with a direct question to drive comments.",
+    "Use 3-5 targeted niche hashtags instead of spamming 30 broad tags."
+  ],
+  "algorithm_updates": [
+    "Instagram continues to prioritize original content and penalize unoriginal aggregator reposts; ensure every clip features fresh player perspective."
+  ],
+  "sources": [
+    "https://about.instagram.com/blog",
+    "https://creators.instagram.com"
+  ],
+  "date": "2026-11-26",
+  "provider": "gemini"
+}

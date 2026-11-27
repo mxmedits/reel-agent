@@ -1,0 +1,15 @@
+{
+ "at": "2026-11-27T05:11:57+00:00",
+ "music_trending": {
+  "n": 0,
+  "error": "Instagram API error (200/5258005): API access blocked."
+ },
+ "original_trending": {
+  "n": 0,
+  "error": "Instagram API error (200/5258005): API access blocked."
+ },
+ "music_search": {
+  "n": 0,
+  "error": "Instagram API error (200/5258005): API access blocked."
+ }
+}

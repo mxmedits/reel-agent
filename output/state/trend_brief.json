@@ -1,42 +1,42 @@
 {
-  "summary": "Instagram Reels algorithms heavily favor high-retention first seconds with clear text hooks and original gameplay without watermarks. High-energy cinematic edits paired with trending phonk and heavy bass tracks are driving peak shares and saves.",
+  "summary": "Instagram Reels algorithms heavily favor high-retention gameplay loops with native text hooks and seamless audio syncing. Originality and high visual fidelity in 9:16 vertical video continue to outperform recycled or watermarked footage.",
   "formats": [
     {
-      "name": "Payoff-First Teaser",
-      "how": "Start with the most insane 2-second clip of the gameplay climax, then rewind to show how it happened."
+      "name": "Punch Zoom Hook",
+      "how": "Start with an intense gameplay moment, zoom in abruptly on the action at 0.5 seconds, and place bold text over the screen."
     },
     {
-      "name": "Contextual POV Box",
-      "how": "Place a relatable gaming scenario box at the top of the screen during high-stress multiplayer moments."
+      "name": "Instant Replay",
+      "how": "Show the full-speed play first for shock value, immediately followed by a slow-motion replay capturing the exact frame of impact."
     }
   ],
   "edit_styles": {
     "recommended": "replay",
-    "notes": "Classic works for quick laughs; replay is dominating high-skill sports and shooter moments; slowmo fits cinematic story beats."
+    "notes": "Classic works best for fast COD gunfights; replay is ideal for unbelievable FC27 goals and chaotic GTA 6 stunt physics."
   },
   "reel_types": {
     "recommended": [
       "replay",
       "classic",
       "slowmo",
-      "pov"
+      "montage"
     ],
     "new_ideas": [
-      "Side-by-side split screen comparing modern gameplay physics with classic franchise nostalgia.",
-      "In-world camera mode cinematic mini-tours with trending ambient soundscapes."
+      "Split-screen comparison Reels showing real-life physics alongside GTA 6 gameplay clips.",
+      "Audio-reactive visualizer overlays matching gun reload sounds in Call of Duty."
     ]
   },
   "music": {
     "genres": [
-      "phonk",
-      "synthwave",
-      "orchestral hype"
+      "Phonk",
+      "Hype Electronic",
+      "Cinematic Orchestral"
     ],
     "search_terms": [
       "drift phonk",
-      "gaming phonk",
-      "epic orchestral",
-      "hype beat"
+      "gaming edit audio",
+      "hard phonk",
+      "epic cinematic score"
     ],
     "mood_bias": "hype",
     "songs": [
@@ -44,92 +44,94 @@
         "title": "Metamorphosis",
         "artist": "INTERWORLD",
         "mood": "hype",
-        "why": "Dominating high-speed gaming montages and clutch highlight reels."
+        "why": "Dominates high-energy gaming montages and fast-paced COD clip edits."
       },
       {
         "title": "Aesthetic",
-        "artist": "Tebi Dautaj",
-        "mood": "intense",
-        "why": "Popular for smooth tactical plays and clean elimination edits."
+        "artist": "Tollan Kim",
+        "mood": "chill",
+        "why": "Popular background track for cinematic exploration and open-world driving clips."
       },
       {
-        "title": "NEON BLADE",
-        "artist": "MoonDeity",
-        "mood": "hype",
-        "why": "Go-to track for aggressive multiplayer pushes and fast-paced action."
+        "title": "Memory Reboot",
+        "artist": "VØJ, Narvent",
+        "mood": "intense",
+        "why": "Frequently used for clutch moments and dramatic slow-motion instant replays."
       }
     ]
   },
   "games": {
     "gta6": {
       "angles": [
-        "physics engine insanity",
-        "police AI chaos",
-        "open-world immersion"
+        "Crazy traffic physics",
+        "Police AI chase escapes",
+        "Cinematic sunset cruising"
       ],
       "timely": [
-        "Latest community discoveries and physics test clips"
+        "Open-world exploration highlights",
+        "Pre-release community hype moments"
       ],
       "hashtags": [
         "#gta6",
-        "#gta6clips",
-        "#gamingreels",
-        "#gtagameplay"
+        "#gtaclips",
+        "#gtaiv",
+        "#gamingcommunity"
       ],
       "avoid": [
-        "Leaks, unverified rumors, and pre-release footage"
+        "Leaks, datamined files, or unauthorized pre-release game footage"
       ]
     },
     "cod": {
       "angles": [
-        "insane sniper flicks",
-        "hot mic reactions",
-        "last-second wins"
+        "Insane sniper flicks",
+        "Pro-tier movement guides",
+        "Hot mic reaction moments"
       ],
       "timely": [
-        "New season weapon meta and map moments"
+        "Season updates and meta weapon loadouts"
       ],
       "hashtags": [
-        "#cod",
         "#callofduty",
+        "#codclips",
         "#warzone",
-        "#gamingclips"
+        "#sniping"
       ],
       "avoid": [
-        "Staged lobby boosting clips and toxic chat audio"
+        "In-game toxicity, slurs, or audio with policy-breaking language"
       ]
     },
     "fc27": {
       "angles": [
-        "last-minute wondergoals",
-        "glitched physics",
-        "rage reactions"
+        "Last-minute winning goals",
+        "Outrageous skill moves",
+        "Glitchy physics moments"
       ],
       "timely": [
-        "Weekend League highlights and ultimate team pack moments"
+        "Weekend League highlights and Team of the Week reactions"
       ],
       "hashtags": [
         "#fc27",
         "#easportsfc",
-        "#fifaclips",
-        "#fut"
+        "#fut",
+        "#fifaultimateteam"
       ],
       "avoid": [
-        "Re-uploaded goals from professional esports broadcasts without credit"
+        "Simulated matches without user-controlled gameplay highlights"
       ]
     }
   },
   "caption_tips": [
-    "Keep text concise and end with a direct question to drive comments.",
-    "Use 3-5 targeted niche hashtags instead of spamming 30 broad tags."
+    "Keep text under 5 words to force viewers to re-watch while reading.",
+    "Use niche gaming keywords early in the caption to improve discoverability.",
+    "End captions with an open-ended question to drive comment section engagement."
   ],
   "algorithm_updates": [
-    "Instagram continues to prioritize original content and penalize unoriginal aggregator reposts; ensure every clip features fresh player perspective."
+    "Instagram prioritizes original content and penalizes unedited reposts; ensure every clip has unique cuts, custom color grading, or original commentary."
   ],
   "sources": [
-    "https://about.instagram.com/blog",
-    "https://creators.instagram.com"
+    "https://about.instagram.com/blog/announcements",
+    "https://creators.instagram.com/blog"
   ],
-  "date": "2026-11-26",
+  "date": "2026-11-27",
   "provider": "gemini"
 }

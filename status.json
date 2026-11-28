@@ -1,6 +1,6 @@
 {
  "v": 1,
- "updated": "2026-11-28T17:10:51+00:00",
+ "updated": "2026-11-28T17:26:39+00:00",
  "note": "",
  "agent": {
   "paused": false,
@@ -12,7 +12,7 @@
   "handle": "@average_gamingclipz",
   "timezone": "America/Toronto",
   "version": "a405df1",
-  "run": "46169077855"
+  "run": "46170419165"
  },
  "schedule": {
   "times": [
@@ -27,7 +27,7 @@
    "10:00",
    "23:30"
   ],
-  "now_local": "2026-11-28T12:10-05:00"
+  "now_local": "2026-11-28T12:26-05:00"
  },
  "settings": {
   "handle": "@average_gamingclipz",
@@ -293,20 +293,20 @@
  },
  "learned": {
   "trends": {
-   "date": "2026-11-27",
-   "summary": "Instagram Reels algorithms heavily favor high-retention gameplay loops with native text hooks and seamless audio syncing. Originality and high visual fidelity in 9:16 vertical video continue to outperform recycled or watermarked footage.",
+   "date": "2026-11-28",
+   "summary": "Gaming Reels are currently prioritizing immediate visual impact in the first 1.5 seconds and seamless loop mechanics to maximize watch time. Meta's recent emphasis on original creator content means gameplay edits must feature distinct visual pacing and native text overlays rather than generic re-uploads.",
    "reel_types": [
     "replay",
-    "classic",
     "slowmo",
+    "classic",
     "montage"
    ],
    "new_ideas": [
-    "Split-screen comparison Reels showing real-life physics alongside GTA 6 gameplay clips.",
-    "Audio-reactive visualizer overlays matching gun reload sounds in Call of Duty."
+    "Split-screen comparison Reels showing real-world locations next to GTA 6 leaked or official footage equivalents",
+    "Interactive 'choose your loadout' pause-game Reels for Call of Duty matches"
    ],
    "algorithm": [
-    "Instagram prioritizes original content and penalizes unedited reposts; ensure every clip has unique cuts, custom color grading, or original commentary."
+    "Instagram continues to prioritize original content and penalize unoriginal aggregators; ensure all gameplay features unique editing touches, custom color grading, or personal commentary."
    ]
   },
   "instagram": {
@@ -470,9 +470,6 @@
   "read_at": "2026-11-23T05:06:40+00:00"
  },
  "log": [
-  "[2026-11-27 20:19:05] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
-  "[2026-11-27 20:34:00] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
-  "[2026-11-27 20:49:02] ! replies: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-27 20:49:02] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-27 21:04:01] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-27 21:07:57] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
@@ -589,6 +586,9 @@
   "[2026-11-28 16:40:55] ! replies: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-28 16:40:55] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-28 16:55:51] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
-  "[2026-11-28 17:10:51] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412"
+  "[2026-11-28 17:10:51] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
+  "[2026-11-28 17:26:37] 📈 trend brief updated (gemini): Gaming Reels are currently prioritizing immediate visual impact in the first 1.5 seconds and seamless loop mechanics to ",
+  "[2026-11-28 17:26:38] ! replies: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
+  "[2026-11-28 17:26:38] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412"
  ]
 }

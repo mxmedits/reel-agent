@@ -1,137 +1,142 @@
 {
-  "summary": "Instagram Reels algorithms heavily favor high-retention gameplay loops with native text hooks and seamless audio syncing. Originality and high visual fidelity in 9:16 vertical video continue to outperform recycled or watermarked footage.",
+  "summary": "Gaming Reels are currently prioritizing immediate visual impact in the first 1.5 seconds and seamless loop mechanics to maximize watch time. Meta's recent emphasis on original creator content means gameplay edits must feature distinct visual pacing and native text overlays rather than generic re-uploads.",
   "formats": [
     {
-      "name": "Punch Zoom Hook",
-      "how": "Start with an intense gameplay moment, zoom in abruptly on the action at 0.5 seconds, and place bold text over the screen."
+      "name": "The Instant Payoff Teaser",
+      "how": "Start with the most explosive 2-second clip of a GTA 6 police shootout or a clutch FC 27 last-minute goal before cutting to the setup."
     },
     {
-      "name": "Instant Replay",
-      "how": "Show the full-speed play first for shock value, immediately followed by a slow-motion replay capturing the exact frame of impact."
+      "name": "Dynamic Speed Ramp",
+      "how": "Play Call of Duty sniper feeds at full speed during the run-up, then drop to 20% speed right on the bullet impact frame."
     }
   ],
   "edit_styles": {
     "recommended": "replay",
-    "notes": "Classic works best for fast COD gunfights; replay is ideal for unbelievable FC27 goals and chaotic GTA 6 stunt physics."
+    "notes": "Classic works best for fast COD trickshots; replay excels for FC 27 goals; meme_bar fits casual GTA 6 physics moments."
   },
   "reel_types": {
     "recommended": [
       "replay",
-      "classic",
       "slowmo",
+      "classic",
       "montage"
     ],
     "new_ideas": [
-      "Split-screen comparison Reels showing real-life physics alongside GTA 6 gameplay clips.",
-      "Audio-reactive visualizer overlays matching gun reload sounds in Call of Duty."
+      "Split-screen comparison Reels showing real-world locations next to GTA 6 leaked or official footage equivalents",
+      "Interactive 'choose your loadout' pause-game Reels for Call of Duty matches"
     ]
   },
   "music": {
     "genres": [
       "Phonk",
-      "Hype Electronic",
-      "Cinematic Orchestral"
+      "Hard Bass",
+      "Cinematic Trap"
     ],
     "search_terms": [
       "drift phonk",
-      "gaming edit audio",
-      "hard phonk",
-      "epic cinematic score"
+      "gaming phonk",
+      "bass boost",
+      "epic cinematic"
     ],
     "mood_bias": "hype",
     "songs": [
       {
-        "title": "Metamorphosis",
+        "title": "METAMORPHOSIS",
         "artist": "INTERWORLD",
         "mood": "hype",
-        "why": "Dominates high-energy gaming montages and fast-paced COD clip edits."
+        "why": "Dominates high-energy gaming montages and fast-paced clip edits."
       },
       {
-        "title": "Aesthetic",
-        "artist": "Tollan Kim",
-        "mood": "chill",
-        "why": "Popular background track for cinematic exploration and open-world driving clips."
-      },
-      {
-        "title": "Memory Reboot",
-        "artist": "VØJ, Narvent",
+        "title": "Murder in My Mind",
+        "artist": "Kordhell",
         "mood": "intense",
-        "why": "Frequently used for clutch moments and dramatic slow-motion instant replays."
+        "why": "A staple for aggressive Call of Duty multi-kill sequences."
+      },
+      {
+        "title": "RAVE",
+        "artist": "Dxrk ダーク",
+        "mood": "hype",
+        "why": "Perfect tempo for dramatic FC 27 goal replays and near misses."
       }
     ]
   },
   "games": {
     "gta6": {
       "angles": [
-        "Crazy traffic physics",
-        "Police AI chase escapes",
-        "Cinematic sunset cruising"
+        "AI pedestrian reactions",
+        "extreme police chase physics",
+        "open-world graphics breakdowns"
       ],
       "timely": [
-        "Open-world exploration highlights",
-        "Pre-release community hype moments"
+        "Post-trailer community detail discoveries",
+        "next-gen physics comparisons"
       ],
       "hashtags": [
         "#gta6",
-        "#gtaclips",
         "#gtaiv",
+        "#gtaclips",
         "#gamingcommunity"
       ],
       "avoid": [
-        "Leaks, datamined files, or unauthorized pre-release game footage"
+        "Pre-release leaks",
+        "unverified rumor clickbait"
       ]
     },
     "cod": {
       "angles": [
         "Insane sniper flicks",
-        "Pro-tier movement guides",
-        "Hot mic reaction moments"
+        "hot mic reactions",
+        "impossible escape routes"
       ],
       "timely": [
-        "Season updates and meta weapon loadouts"
+        "New seasonal weapon meta",
+        "ranked play clutch moments"
       ],
       "hashtags": [
         "#callofduty",
         "#codclips",
-        "#warzone",
-        "#sniping"
+        "#mw3",
+        "#warzone"
       ],
       "avoid": [
-        "In-game toxicity, slurs, or audio with policy-breaking language"
+        "Cheater accusation footage",
+        "toxic lobby arguments"
       ]
     },
     "fc27": {
       "angles": [
-        "Last-minute winning goals",
-        "Outrageous skill moves",
-        "Glitchy physics moments"
+        "Bicycle kicks from impossible angles",
+        "last-minute winner reactions",
+        "keeper blunder comedy"
       ],
       "timely": [
-        "Weekend League highlights and Team of the Week reactions"
+        "Ultimate Team weekend league highlights",
+        "new patch gameplay shifts"
       ],
       "hashtags": [
         "#fc27",
-        "#easportsfc",
+        "#eafc",
         "#fut",
-        "#fifaultimateteam"
+        "#fifaclips"
       ],
       "avoid": [
-        "Simulated matches without user-controlled gameplay highlights"
+        "Store pack opening filler",
+        "menu navigation clips"
       ]
     }
   },
   "caption_tips": [
-    "Keep text under 5 words to force viewers to re-watch while reading.",
-    "Use niche gaming keywords early in the caption to improve discoverability.",
+    "Keep hooks under 5 words to encourage re-reads while the Reel loops.",
+    "Use specific game terminology to trigger niche algorithm distribution.",
     "End captions with an open-ended question to drive comment section engagement."
   ],
   "algorithm_updates": [
-    "Instagram prioritizes original content and penalizes unedited reposts; ensure every clip has unique cuts, custom color grading, or original commentary."
+    "Instagram continues to prioritize original content and penalize unoriginal aggregators; ensure all gameplay features unique editing touches, custom color grading, or personal commentary."
   ],
   "sources": [
-    "https://about.instagram.com/blog/announcements",
-    "https://creators.instagram.com/blog"
+    "https://about.instagram.com/blog",
+    "https://instagram-creators.tumblr.com"
   ],
-  "date": "2026-11-27",
+  "date": "2026-11-28",
   "provider": "gemini"
 }

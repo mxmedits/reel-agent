@@ -885,3 +885,7 @@
 [2026-11-28 13:17:00] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
 [2026-11-28 13:31:59] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
 [2026-11-28 13:47:07] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
+[2026-11-28 14:02:07] installing ffmpeg on GitHub's computer (about half a minute)
+[2026-11-28 14:02:22]   (Instagram hashtag search not available for this app yet: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412)
+[2026-11-28 14:02:23] ! replies: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412
+[2026-11-28 14:02:23] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412

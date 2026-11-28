@@ -1,6 +1,6 @@
 {
  "v": 1,
- "updated": "2026-11-28T14:02:23+00:00",
+ "updated": "2026-11-28T14:17:12+00:00",
  "note": "",
  "agent": {
   "paused": false,
@@ -12,7 +12,7 @@
   "handle": "@average_gamingclipz",
   "timezone": "America/Toronto",
   "version": "a405df1",
-  "run": "46152551194"
+  "run": "46153850611"
  },
  "schedule": {
   "times": [
@@ -27,7 +27,7 @@
    "10:00",
    "23:30"
   ],
-  "now_local": "2026-11-28T09:02-05:00"
+  "now_local": "2026-11-28T09:17-05:00"
  },
  "settings": {
   "handle": "@average_gamingclipz",
@@ -470,7 +470,6 @@
   "read_at": "2026-11-23T05:06:40+00:00"
  },
  "log": [
-  "[2026-11-27 17:19:24] 🎵 Instagram's music for apps: music trending: 0 (error: Instagram API error (200/5258005): API access blocked.), original trending: 0 (error: Instagram API error (200/5258005): API access blocked.), music search: 0 (error: Instagram API error (200/5258005): API access blocked.)",
   "[2026-11-27 17:19:25] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-27 17:33:49] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
   "[2026-11-27 17:48:48] ! replies: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
@@ -589,6 +588,7 @@
   "[2026-11-28 14:02:07] installing ffmpeg on GitHub's computer (about half a minute)",
   "[2026-11-28 14:02:22]   (Instagram hashtag search not available for this app yet: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412)",
   "[2026-11-28 14:02:23] ! replies: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
-  "[2026-11-28 14:02:23] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412"
+  "[2026-11-28 14:02:23] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412",
+  "[2026-11-28 14:17:11] ! profile check: Instagram API error (200/None): Cannot call API for app 1796388812123291 on behalf of user 2907155926307412"
  ]
 }
